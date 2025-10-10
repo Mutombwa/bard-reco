@@ -53,8 +53,8 @@ def show_database_config():
     with col1:
         server = st.text_input(
             "Server Address",
-            value=st.session_state.get('sql_server', 'localhost'),
-            help="SQL Server address (e.g., localhost or server.database.windows.net)"
+            value=st.session_state.get('sql_server', 'localhost\\SQLEXPRESS'),
+            help="SQL Server address (e.g., localhost\\SQLEXPRESS)"
         )
         
         database = st.text_input(
@@ -69,17 +69,26 @@ def show_database_config():
             ["Windows Authentication", "SQL Server Authentication"],
             index=0 if st.session_state.get('sql_auth_type', 'Windows') == 'Windows' else 1
         )
-        
-        if auth_type == "SQL Server Authentication":
+    
+    # Show username/password fields if SQL Server Authentication is selected
+    if auth_type == "SQL Server Authentication":
+        col1, col2 = st.columns(2)
+        with col1:
             username = st.text_input(
                 "Username",
-                value=st.session_state.get('sql_username', '')
+                value=st.session_state.get('sql_username', 'ReconciliationApp'),
+                help="SQL Server login username"
             )
+        with col2:
             password = st.text_input(
                 "Password",
                 type="password",
-                value=st.session_state.get('sql_password', '')
+                value=st.session_state.get('sql_password', ''),
+                help="SQL Server login password"
             )
+    else:
+        username = None
+        password = None
     
     # Test Connection Button
     col1, col2, col3 = st.columns([1, 1, 2])
