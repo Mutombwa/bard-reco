@@ -31,3 +31,6 @@ numba>=0.57.0
 
 # SQL Server database (only works locally, not on Streamlit Cloud)
 # Install separately for local use: pip install pyodbc>=5.0.0
+
+# PostgreSQL database (works everywhere - local and cloud)
+psycopg2-binary>=2.9.0
