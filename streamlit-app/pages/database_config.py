@@ -23,7 +23,7 @@ def show_database_config():
     st.title("🗄️ Database Configuration")
     
     st.markdown("""
-    Configure your database connection to save reconciliation results.
+    Configure your database connection to save reconciliation results permanently.
     """)
     
     # Database Type Selection
