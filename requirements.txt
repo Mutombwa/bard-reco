@@ -1,0 +1,13 @@
+pandas
+openpyxl
+fuzzywuzzy
+python-Levenshtein
+numpy
+numba
+rapidfuzz
+flask
+flask-socketio
+eventlet
+psutil
+xlsxwriter
+pillow
