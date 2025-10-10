@@ -26,6 +26,7 @@ from components.dashboard import Dashboard
 from src.reconciliation_engine import ReconciliationEngine
 from utils.session_state import SessionState
 from config.app_config import APP_CONFIG
+from pages.database_config import show_database_config
 
 # Page configuration
 st.set_page_config(
@@ -208,7 +209,7 @@ def show_dashboard():
         
         page = st.radio(
             "Navigation",
-            ["🏠 Dashboard", "📊 FNB Workflow", "🏢 Bidvest Workflow", "🏦 Corporate Settlements", "⚙️ Settings"],
+            ["🏠 Dashboard", "📊 FNB Workflow", "🏢 Bidvest Workflow", "🏦 Corporate Settlements", "🗄️ Database Config", "⚙️ Settings"],
             label_visibility="collapsed"
         )
         
@@ -228,6 +229,8 @@ def show_dashboard():
         show_bidvest_workflow()
     elif "Corporate" in page:
         show_corporate_workflow()
+    elif "Database" in page:
+        show_database_config()
     elif "Settings" in page:
         show_settings()
 

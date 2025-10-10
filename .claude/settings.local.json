@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/**)",
+      "Bash(awk:*)",
+      "Bash(dir:*)",
+      "Bash(cd:*)",
+      "Bash(C:UsersTatendaanaconda3envsMASTERpython.exe -c \"import sys; print(f''Python: {sys.version}''); import flask; print(f''Flask: {flask.__version__}'')\")",
+      "Bash(C:UsersTatendaanaconda3envsMASTERpython.exe -c \"import flask; print(''Flask OK'')\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
