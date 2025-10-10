@@ -98,6 +98,7 @@ def show_postgres_config():
                 help="Database port"
             )
         
+        # Build connection string from individual fields
         conn_string = f"postgresql://{user}:{password}@{host}:{port}/{database}"
     
     # Test Connection Button
@@ -106,13 +107,24 @@ def show_postgres_config():
     with col1:
         if st.button("🔌 Test Connection", use_container_width=True, key="pg_test"):
             with st.spinner("Testing PostgreSQL connection..."):
-                db = PostgreSQLDatabase(conn_string)
+                # Rebuild connection string with current values
+                if connection_method == "Connection String":
+                    test_conn_string = conn_string
+                else:
+                    # Use the text input values directly
+                    test_conn_string = f"postgresql://{user}:{password}@{host}:{port}/{database}"
+                
+                # Show connection string for debugging (without password)
+                debug_string = test_conn_string.replace(password, "****")
+                st.info(f"Connecting to: {debug_string}")
+                
+                db = PostgreSQLDatabase(test_conn_string)
                 
                 if db.connect():
                     st.success("✅ Connection successful!")
                     
                     # Save to session state
-                    st.session_state['postgres_conn_string'] = conn_string
+                    st.session_state['postgres_conn_string'] = test_conn_string
                     if connection_method == "Individual Fields":
                         st.session_state['postgres_host'] = host
                         st.session_state['postgres_database'] = database
