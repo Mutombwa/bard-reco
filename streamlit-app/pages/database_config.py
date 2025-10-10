@@ -1,7 +1,8 @@
 """
 Database Configuration Page
 ===========================
-Configure SQL Server connection and manage database schema
+Configure database connection and manage database schema
+Supports: SQL Server (local) and PostgreSQL/Supabase (cloud)
 """
 
 import streamlit as st
@@ -13,15 +14,158 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from utils.sql_database import ReconciliationDatabase
+from utils.sql_database import ReconciliationDatabase, PYODBC_AVAILABLE
+from utils.postgres_database import PostgreSQLDatabase, PSYCOPG2_AVAILABLE
 
 
 def show_database_config():
     """Show database configuration page"""
-    st.title("🗄️ SQL Server Configuration")
+    st.title("🗄️ Database Configuration")
     
-    # Check if pyodbc is available
-    from utils.sql_database import PYODBC_AVAILABLE
+    st.markdown("""
+    Configure your database connection to save reconciliation results.
+    """)
+    
+    # Database Type Selection
+    st.subheader("Select Database Type")
+    
+    db_type = st.radio(
+        "Database",
+        ["PostgreSQL/Supabase (Cloud Compatible ✅)", "SQL Server (Local Only 🖥️)"],
+        help="PostgreSQL works on Streamlit Cloud. SQL Server only works locally."
+    )
+    
+    if "SQL Server" in db_type:
+        show_sql_server_config()
+    else:
+        show_postgres_config()
+
+
+def show_postgres_config():
+    """Configure PostgreSQL/Supabase connection"""
+    
+    if not PSYCOPG2_AVAILABLE:
+        st.error("❌ PostgreSQL driver not installed")
+        st.info("💡 Add to requirements.txt: `psycopg2-binary>=2.9.0`")
+        return
+    
+    st.markdown("### 🐘 PostgreSQL/Supabase Connection")
+    
+    # Connection string or individual fields
+    connection_method = st.radio(
+        "Connection Method",
+        ["Connection String", "Individual Fields"],
+        horizontal=True
+    )
+    
+    if connection_method == "Connection String":
+        conn_string = st.text_input(
+            "Connection String",
+            value=st.session_state.get('postgres_conn_string', ''),
+            type="password",
+            help="postgresql://user:password@host:port/database",
+            placeholder="postgresql://postgres:password@db.xxx.supabase.co:5432/postgres"
+        )
+    else:
+        col1, col2 = st.columns(2)
+        with col1:
+            host = st.text_input(
+                "Host",
+                value=st.session_state.get('postgres_host', 'db.cmlbornqaojclzrtqffh.supabase.co'),
+                help="Database host address"
+            )
+            database = st.text_input(
+                "Database",
+                value=st.session_state.get('postgres_database', 'postgres'),
+                help="Database name"
+            )
+        
+        with col2:
+            user = st.text_input(
+                "Username",
+                value=st.session_state.get('postgres_user', 'postgres'),
+                help="Database username"
+            )
+            password = st.text_input(
+                "Password",
+                type="password",
+                value=st.session_state.get('postgres_password', ''),
+                help="Database password"
+            )
+            port = st.text_input(
+                "Port",
+                value=st.session_state.get('postgres_port', '5432'),
+                help="Database port"
+            )
+        
+        conn_string = f"postgresql://{user}:{password}@{host}:{port}/{database}"
+    
+    # Test Connection Button
+    col1, col2, col3 = st.columns([1, 1, 2])
+    
+    with col1:
+        if st.button("🔌 Test Connection", use_container_width=True, key="pg_test"):
+            with st.spinner("Testing PostgreSQL connection..."):
+                db = PostgreSQLDatabase(conn_string)
+                
+                if db.connect():
+                    st.success("✅ Connection successful!")
+                    
+                    # Save to session state
+                    st.session_state['postgres_conn_string'] = conn_string
+                    if connection_method == "Individual Fields":
+                        st.session_state['postgres_host'] = host
+                        st.session_state['postgres_database'] = database
+                        st.session_state['postgres_user'] = user
+                        st.session_state['postgres_password'] = password
+                        st.session_state['postgres_port'] = port
+                    
+                    db.disconnect()
+                else:
+                    st.error("❌ Connection failed. Please check your settings.")
+    
+    with col2:
+        if st.button("📋 Create Tables", use_container_width=True, key="pg_create"):
+            if 'postgres_conn_string' not in st.session_state:
+                st.error("Please test connection first!")
+            else:
+                with st.spinner("Creating database tables..."):
+                    db = PostgreSQLDatabase(st.session_state['postgres_conn_string'])
+                    
+                    if db.create_tables():
+                        st.success("✅ Database tables created successfully!")
+                    else:
+                        st.error("❌ Failed to create tables. Check permissions.")
+    
+    # Supabase Quick Setup Guide
+    with st.expander("📖 Supabase Setup Guide", expanded=False):
+        st.markdown("""
+        ### Quick Setup Steps:
+        
+        1. **Create Supabase Account:** https://supabase.com
+        2. **Create New Project** (takes 2 minutes)
+        3. **Get Connection Details:**
+           - Host: `db.xxxxx.supabase.co`
+           - Database: `postgres`
+           - User: `postgres`
+           - Password: (from project creation)
+        4. **Run SQL Script** in Supabase SQL Editor (see below)
+        5. **Add to Streamlit Cloud Secrets:**
+           ```toml
+           [postgres]
+           host = "db.xxxxx.supabase.co"
+           port = "5432"
+           database = "postgres"
+           user = "postgres"
+           password = "your-password"
+           ```
+        
+        See `POSTGRESQL_SETUP_GUIDE.md` for detailed instructions!
+        """)
+
+
+def show_sql_server_config():
+    """Configure SQL Server connection"""
     
     if not PYODBC_AVAILABLE:
         st.error("❌ SQL Server features are not available on Streamlit Cloud")
@@ -32,21 +176,10 @@ def show_database_config():
         1. Run the app locally: `streamlit run app.py`
         2. Ensure SQL Server and ODBC Driver 17 are installed
         3. Follow the setup guide: `SQL_SERVER_SETUP_GUIDE.md`
-        
-        For cloud deployment, consider using:
-        - PostgreSQL (Supabase)
-        - MySQL (PlanetScale)
-        - SQLite (local storage)
-        - Cloud-native databases
         """)
         return
     
-    st.markdown("""
-    Configure your SQL Server connection to save reconciliation results.
-    """)
-    
-    # Connection Configuration
-    st.subheader("Connection Settings")
+    st.markdown("### 🖥️ SQL Server Connection (Local)")
     
     col1, col2 = st.columns(2)
     
@@ -94,8 +227,8 @@ def show_database_config():
     col1, col2, col3 = st.columns([1, 1, 2])
     
     with col1:
-        if st.button("🔌 Test Connection", use_container_width=True):
-            with st.spinner("Testing connection..."):
+        if st.button("🔌 Test Connection", use_container_width=True, key="sql_test"):
+            with st.spinner("Testing SQL Server connection..."):
                 # Build connection string
                 if auth_type == "Windows Authentication":
                     conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes"
@@ -121,7 +254,7 @@ def show_database_config():
                     st.error("❌ Connection failed. Please check your settings.")
     
     with col2:
-        if st.button("📋 Create Tables", use_container_width=True):
+        if st.button("📋 Create Tables", use_container_width=True, key="sql_create"):
             if 'sql_connection_string' not in st.session_state:
                 st.error("Please test connection first!")
             else:
@@ -132,119 +265,6 @@ def show_database_config():
                         st.success("✅ Database tables created successfully!")
                     else:
                         st.error("❌ Failed to create tables. Check permissions.")
-    
-    # Database Schema Documentation
-    st.divider()
-    st.subheader("📊 Database Schema")
-    
-    with st.expander("View Database Structure", expanded=False):
-        st.markdown("""
-        ### Tables Created:
-        
-        **1. ReconciliationSessions**
-        - SessionID (Primary Key)
-        - WorkflowType (FNB, Corporate, etc.)
-        - Username
-        - StartTime, EndTime
-        - Status (In Progress/Completed/Failed)
-        - TotalMatched, TotalUnmatched, MatchRate
-        
-        **2. MatchedTransactions**
-        - TransactionID (Primary Key)
-        - SessionID (Foreign Key)
-        - MatchType (Perfect/Fuzzy/Amount/Split)
-        - Ledger fields (Date, Reference, Debit, Credit, Description)
-        - Statement fields (Date, Reference, Amount, Description)
-        - MatchScore, Currency
-        
-        **3. SplitTransactions**
-        - SplitID (Primary Key)
-        - SessionID (Foreign Key)
-        - SplitType (Many-to-One/One-to-Many)
-        - TotalAmount, ComponentCount
-        
-        **4. SplitComponents**
-        - ComponentID (Primary Key)
-        - SplitID (Foreign Key)
-        - TransactionSource (Ledger/Statement)
-        - Transaction details
-        
-        **5. UnmatchedTransactions**
-        - UnmatchedID (Primary Key)
-        - SessionID (Foreign Key)
-        - Source (Ledger/Statement)
-        - Transaction details
-        
-        **6. ForeignCredits**
-        - ForeignCreditID (Primary Key)
-        - SessionID (Foreign Key)
-        - Ledger and Statement transaction details
-        """)
-    
-    # View Saved Data
-    st.divider()
-    st.subheader("📈 Session History")
-    
-    if 'sql_connection_string' in st.session_state:
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            if st.button("🔄 Refresh History", use_container_width=True):
-                st.rerun()
-        
-        db = ReconciliationDatabase(st.session_state['sql_connection_string'])
-        
-        username_filter = st.session_state.get('current_user', None)
-        history_df = db.get_session_history(username=username_filter, limit=50)
-        
-        if not history_df.empty:
-            st.dataframe(
-                history_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "SessionID": "Session ID",
-                    "WorkflowType": "Workflow",
-                    "StartTime": st.column_config.DatetimeColumn("Start Time", format="DD/MM/YYYY HH:mm"),
-                    "EndTime": st.column_config.DatetimeColumn("End Time", format="DD/MM/YYYY HH:mm"),
-                    "MatchRate": st.column_config.NumberColumn("Match Rate", format="%.2f%%")
-                }
-            )
-            
-            # View session details
-            st.subheader("View Session Details")
-            session_id = st.number_input("Enter Session ID", min_value=1, step=1)
-            
-            if st.button("📊 Load Session Details"):
-                details = db.get_session_details(session_id)
-                
-                if details:
-                    st.success(f"Session {session_id} loaded")
-                    
-                    # Show session info
-                    if 'session' in details:
-                        st.json(details['session'])
-                    
-                    # Show matched transactions
-                    if 'matched' in details and not details['matched'].empty:
-                        st.subheader("Matched Transactions")
-                        st.dataframe(details['matched'], use_container_width=True)
-                    
-                    # Show unmatched transactions
-                    if 'unmatched' in details and not details['unmatched'].empty:
-                        st.subheader("Unmatched Transactions")
-                        st.dataframe(details['unmatched'], use_container_width=True)
-                    
-                    # Show splits
-                    if 'splits' in details and not details['splits'].empty:
-                        st.subheader("Split Transactions")
-                        st.dataframe(details['splits'], use_container_width=True)
-                else:
-                    st.error("Session not found")
-        else:
-            st.info("No reconciliation sessions found in database")
-    else:
-        st.info("👆 Please configure and test database connection first")
 
 
 if __name__ == "__main__":
