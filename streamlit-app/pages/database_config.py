@@ -20,6 +20,27 @@ def show_database_config():
     """Show database configuration page"""
     st.title("🗄️ SQL Server Configuration")
     
+    # Check if pyodbc is available
+    from utils.sql_database import PYODBC_AVAILABLE
+    
+    if not PYODBC_AVAILABLE:
+        st.error("❌ SQL Server features are not available on Streamlit Cloud")
+        st.info("""
+        💡 **SQL Server integration is only available when running locally**
+        
+        To use SQL Server features:
+        1. Run the app locally: `streamlit run app.py`
+        2. Ensure SQL Server and ODBC Driver 17 are installed
+        3. Follow the setup guide: `SQL_SERVER_SETUP_GUIDE.md`
+        
+        For cloud deployment, consider using:
+        - PostgreSQL (Supabase)
+        - MySQL (PlanetScale)
+        - SQLite (local storage)
+        - Cloud-native databases
+        """)
+        return
+    
     st.markdown("""
     Configure your SQL Server connection to save reconciliation results.
     """)

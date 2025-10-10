@@ -4,7 +4,13 @@ SQL Server Database Module for Reconciliation App
 Handles database operations for storing reconciliation transactions and results
 """
 
-import pyodbc
+try:
+    import pyodbc
+    PYODBC_AVAILABLE = True
+except ImportError:
+    PYODBC_AVAILABLE = False
+    pyodbc = None
+
 import pandas as pd
 from datetime import datetime
 from typing import Optional, Dict, List
@@ -40,6 +46,11 @@ class ReconciliationDatabase:
     
     def connect(self) -> bool:
         """Establish database connection"""
+        if not PYODBC_AVAILABLE:
+            st.error("❌ pyodbc is not available. SQL Server features are only available when running locally.")
+            st.info("💡 This feature requires SQL Server and ODBC drivers installed on your local machine.")
+            return False
+        
         try:
             self.conn = pyodbc.connect(self.connection_string)
             return True

@@ -29,5 +29,5 @@ psutil>=5.9.0
 pillow>=10.0.0
 numba>=0.57.0
 
-# SQL Server database
-pyodbc>=5.0.0
+# SQL Server database (only works locally, not on Streamlit Cloud)
+# Install separately for local use: pip install pyodbc>=5.0.0
