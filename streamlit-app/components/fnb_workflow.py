@@ -1389,36 +1389,70 @@ class FNBWorkflow:
                 if split_matches and len(split_matches) > 0:
                     st.info(f"📊 Found {len(split_matches)} split transaction(s)")
                     
+                    # Get original dataframes from session state
+                    ledger = st.session_state.get('fnb_ledger')
+                    statement = st.session_state.get('fnb_statement')
+                    
                     for i, split in enumerate(split_matches):
                         split_type = split.get('split_type', 'Unknown')
-                        with st.expander(f"🔀 Split #{i+1} - {split_type.replace('_', ' ').title()}", expanded=True):
-                            col1, col2 = st.columns(2)
-                            
+                        with st.expander(f"🔀 Split #{i+1} - {split_type.replace('_', ' ').title()}", expanded=(i==0)):
+                            # Summary info
+                            col1, col2 = st.columns([1, 1])
                             with col1:
-                                st.markdown("**📋 Details:**")
-                                st.write(f"Type: `{split_type}`")
-                                st.write(f"Total Amount: `{split.get('total_amount', 0):,.2f}`")
-                                st.write(f"Match Score: `{split.get('similarity', 0):.1f}%`")
+                                st.markdown("**📋 Type:**")
+                                if split_type == 'many_to_one':
+                                    st.write("Multiple Ledger → One Statement")
+                                elif split_type == 'one_to_many':
+                                    st.write("One Ledger → Multiple Statements")
+                                else:
+                                    st.write(split_type.replace('_', ' ').title())
                             
                             with col2:
-                                st.markdown("**🔗 Linked Items:**")
-                                if split_type == 'many_to_one':
-                                    st.write(f"Statement Index: `{split.get('statement_idx', 'N/A')}`")
-                                    st.write(f"Ledger Indices: `{split.get('ledger_indices', [])}`")
-                                elif split_type == 'one_to_many':
-                                    st.write(f"Ledger Index: `{split.get('ledger_idx', 'N/A')}`")
-                                    st.write(f"Statement Indices: `{split.get('statement_indices', [])}`")
+                                st.markdown("**💰 Total Amount:**")
+                                st.write(f"`{split.get('total_amount', 0):,.2f}`")
                             
-                            # Show detailed transaction data if available
-                            if 'statement_row' in split:
-                                st.markdown("**Statement Data:**")
-                                stmt_df = pd.DataFrame([split['statement_row']])
-                                st.dataframe(stmt_df, use_container_width=True)
+                            st.divider()
                             
-                            if 'ledger_rows' in split:
-                                st.markdown("**Ledger Data:**")
-                                ledger_df = pd.DataFrame(split['ledger_rows'])
-                                st.dataframe(ledger_df, use_container_width=True)
+                            # Show actual transaction data
+                            if split_type == 'many_to_one':
+                                # Statement transaction (target)
+                                stmt_idx = split.get('statement_idx')
+                                if statement is not None and stmt_idx in statement.index:
+                                    st.markdown("**� Statement Transaction (Target):**")
+                                    stmt_row = statement.loc[[stmt_idx]].copy()
+                                    # Remove normalized columns
+                                    display_cols = [col for col in stmt_row.columns if not col.startswith('_')]
+                                    st.dataframe(stmt_row[display_cols], use_container_width=True, hide_index=True)
+                                    st.markdown("")
+                                
+                                # Ledger transactions (components)
+                                ledger_indices = split.get('ledger_indices', [])
+                                if ledger is not None and ledger_indices:
+                                    st.markdown(f"**📊 Ledger Transactions (Components - {len(ledger_indices)} items):**")
+                                    ledger_rows = ledger.loc[ledger_indices].copy()
+                                    # Remove normalized columns
+                                    display_cols = [col for col in ledger_rows.columns if not col.startswith('_')]
+                                    st.dataframe(ledger_rows[display_cols], use_container_width=True, hide_index=True)
+                            
+                            elif split_type == 'one_to_many':
+                                # Ledger transaction (target)
+                                ledger_idx = split.get('ledger_idx')
+                                if ledger is not None and ledger_idx in ledger.index:
+                                    st.markdown("**📊 Ledger Transaction (Target):**")
+                                    ledger_row = ledger.loc[[ledger_idx]].copy()
+                                    # Remove normalized columns
+                                    display_cols = [col for col in ledger_row.columns if not col.startswith('_')]
+                                    st.dataframe(ledger_row[display_cols], use_container_width=True, hide_index=True)
+                                    st.markdown("")
+                                
+                                # Statement transactions (components)
+                                stmt_indices = split.get('statement_indices', [])
+                                if statement is not None and stmt_indices:
+                                    st.markdown(f"**📄 Statement Transactions (Components - {len(stmt_indices)} items):**")
+                                    stmt_rows = statement.loc[stmt_indices].copy()
+                                    # Remove normalized columns
+                                    display_cols = [col for col in stmt_rows.columns if not col.startswith('_')]
+                                    st.dataframe(stmt_rows[display_cols], use_container_width=True, hide_index=True)
                 else:
                     st.success("✅ No split transactions found - All transactions matched individually")
 
