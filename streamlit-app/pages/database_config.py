@@ -16,6 +16,7 @@ if parent_dir not in sys.path:
 
 from utils.sql_database import ReconciliationDatabase, PYODBC_AVAILABLE
 from utils.postgres_database import PostgreSQLDatabase, PSYCOPG2_AVAILABLE
+from urllib.parse import quote_plus
 
 
 def show_database_config():
@@ -111,11 +112,13 @@ def show_postgres_config():
                 if connection_method == "Connection String":
                     test_conn_string = conn_string
                 else:
-                    # Use the text input values directly
-                    test_conn_string = f"postgresql://{user}:{password}@{host}:{port}/{database}"
+                    # URL-encode the password to handle special characters like @ # etc.
+                    encoded_password = quote_plus(password)
+                    # Use the text input values directly with encoded password
+                    test_conn_string = f"postgresql://{user}:{encoded_password}@{host}:{port}/{database}"
                 
                 # Show connection string for debugging (without password)
-                debug_string = test_conn_string.replace(password, "****")
+                debug_string = test_conn_string.replace(quote_plus(password) if connection_method != "Connection String" else password, "****")
                 st.info(f"Connecting to: {debug_string}")
                 
                 db = PostgreSQLDatabase(test_conn_string)
