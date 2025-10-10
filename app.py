@@ -158,30 +158,41 @@ def show_login_page():
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.subheader("Please Login")
         
-        username = st.text_input("Username", key="login_username", placeholder="admin")
-        password = st.text_input("Password", type="password", key="login_password", placeholder="admin123")
+        # Use a form to better handle autofill
+        with st.form("login_form", clear_on_submit=False):
+            username = st.text_input("Username", placeholder="admin", autocomplete="username")
+            password = st.text_input("Password", type="password", placeholder="admin123", autocomplete="current-password")
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                login_submitted = st.form_submit_button("🔓 Login", use_container_width=True)
+            with col_b:
+                # Note: Can't have another submit button in the same form
+                pass
         
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("🔓 Login", use_container_width=True):
-                if username and password:
-                    # Simple authentication check
-                    if (username == "admin" and password == "admin123") or (username == "demo" and password == "demo"):
-                        st.session_state.authenticated = True
-                        st.session_state.username = username
-                        st.session_state.current_page = 'dashboard'
-                        st.rerun()
-                    else:
-                        st.error("❌ Invalid credentials. Try: admin/admin123 or demo/demo")
+        # Handle login outside the form
+        if login_submitted:
+            username_val = username.strip() if username else ""
+            password_val = password.strip() if password else ""
+            
+            if username_val and password_val:
+                # Simple authentication check
+                if (username_val == "admin" and password_val == "admin123") or (username_val == "demo" and password_val == "demo"):
+                    st.session_state.authenticated = True
+                    st.session_state.username = username_val
+                    st.session_state.current_page = 'dashboard'
+                    st.rerun()
                 else:
-                    st.error("❌ Please enter username and password")
+                    st.error("❌ Invalid credentials. Try: admin/admin123 or demo/demo")
+            else:
+                st.warning("⚠️ Please enter both username and password")
         
-        with col_b:
-            if st.button("📝 Demo Mode", use_container_width=True):
-                st.session_state.authenticated = True
-                st.session_state.username = "Demo User"
-                st.session_state.current_page = 'dashboard'
-                st.rerun()
+        # Demo mode button outside the form
+        if st.button("📝 Demo Mode", use_container_width=True, key="demo_mode_btn"):
+            st.session_state.authenticated = True
+            st.session_state.username = "Demo User"
+            st.session_state.current_page = 'dashboard'
+            st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
         
