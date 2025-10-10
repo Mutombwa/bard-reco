@@ -1516,10 +1516,10 @@ class FNBWorkflow:
             if 'matched' in results and not results['matched'].empty:
                 perfect_matches = results['matched'][results['matched']['Match_Type'] == 'Perfect']
                 if not perfect_matches.empty:
-                    csv_rows.append(['═' * 100])
+                    csv_rows.append(['=' * 100])
                     csv_rows.append(['BATCH 1: PERFECT MATCHES (100% Score)'])
                     csv_rows.append([f'Count: {len(perfect_matches)}'])
-                    csv_rows.append(['═' * 100])
+                    csv_rows.append(['=' * 100])
                     csv_rows.append([])
                     
                     # Add column headers
@@ -1536,10 +1536,10 @@ class FNBWorkflow:
             if 'matched' in results and not results['matched'].empty:
                 fuzzy_matches = results['matched'][results['matched']['Match_Type'] == 'Fuzzy']
                 if not fuzzy_matches.empty:
-                    csv_rows.append(['═' * 100])
+                    csv_rows.append(['=' * 100])
                     csv_rows.append(['BATCH 2: FUZZY MATCHES (85-99% Similarity)'])
                     csv_rows.append([f'Count: {len(fuzzy_matches)}'])
-                    csv_rows.append(['═' * 100])
+                    csv_rows.append(['=' * 100])
                     csv_rows.append([])
                     
                     csv_rows.append(fuzzy_matches.columns.tolist())
@@ -1553,10 +1553,10 @@ class FNBWorkflow:
             if 'matched' in results and not results['matched'].empty:
                 foreign_credits = results['matched'][results['matched']['Match_Type'] == 'Foreign_Credit']
                 if not foreign_credits.empty:
-                    csv_rows.append(['═' * 100])
+                    csv_rows.append(['=' * 100])
                     csv_rows.append(['BATCH 3: FOREIGN CREDITS (Amount > 10,000)'])
                     csv_rows.append([f'Count: {len(foreign_credits)}'])
-                    csv_rows.append(['═' * 100])
+                    csv_rows.append(['=' * 100])
                     csv_rows.append([])
                     
                     csv_rows.append(foreign_credits.columns.tolist())
@@ -1569,14 +1569,79 @@ class FNBWorkflow:
             # BATCH 4: SPLIT TRANSACTIONS
             split_matches = results.get('split_matches', [])
             if split_matches:
-                csv_rows.append(['═' * 100])
+                csv_rows.append(['=' * 100])
                 csv_rows.append(['BATCH 4: SPLIT TRANSACTIONS (Many-to-One / One-to-Many)'])
                 csv_rows.append([f'Count: {len(split_matches)}'])
-                csv_rows.append(['═' * 100])
+                csv_rows.append(['=' * 100])
                 csv_rows.append([])
                 
+                # Get ledger and statement from session state to show actual transaction details
+                ledger = st.session_state.get('fnb_ledger')
+                statement = st.session_state.get('fnb_statement')
+                
                 for i, split in enumerate(split_matches):
-                    csv_rows.append([f'Split #{i+1}:', split.get('split_type', 'Unknown')])
+                    csv_rows.append([f'--- Split Transaction #{i+1} ---'])
+                    csv_rows.append(['Type:', split.get('split_type', 'Unknown')])
+                    csv_rows.append([])
+                    
+                    # Show the actual transaction details
+                    if split.get('split_type') == 'many_to_one':
+                        # Multiple ledger entries matching one statement
+                        csv_rows.append(['STATEMENT ENTRY (Target):'])
+                        stmt_idx = split.get('statement_idx')
+                        if statement is not None and stmt_idx in statement.index:
+                            stmt_row = statement.loc[stmt_idx]
+                            csv_rows.append(['Date', 'Reference', 'Amount', 'Description'])
+                            csv_rows.append([
+                                str(stmt_row.get('Date', '')),
+                                str(stmt_row.get('Reference', '')),
+                                str(stmt_row.get('Amount', '')),
+                                str(stmt_row.get('Description', ''))
+                            ])
+                        csv_rows.append([])
+                        
+                        csv_rows.append(['LEDGER ENTRIES (Components):'])
+                        csv_rows.append(['Date', 'Reference', 'Debit', 'Credit', 'Description'])
+                        for ledger_idx in split.get('ledger_indices', []):
+                            if ledger is not None and ledger_idx in ledger.index:
+                                ledger_row = ledger.loc[ledger_idx]
+                                csv_rows.append([
+                                    str(ledger_row.get('Date', '')),
+                                    str(ledger_row.get('Reference', '')),
+                                    str(ledger_row.get('Debit', '')),
+                                    str(ledger_row.get('Credit', '')),
+                                    str(ledger_row.get('Description', ''))
+                                ])
+                    
+                    elif split.get('split_type') == 'one_to_many':
+                        # One ledger entry matching multiple statements
+                        csv_rows.append(['LEDGER ENTRY (Target):'])
+                        ledger_idx = split.get('ledger_idx')
+                        if ledger is not None and ledger_idx in ledger.index:
+                            ledger_row = ledger.loc[ledger_idx]
+                            csv_rows.append(['Date', 'Reference', 'Debit', 'Credit', 'Description'])
+                            csv_rows.append([
+                                str(ledger_row.get('Date', '')),
+                                str(ledger_row.get('Reference', '')),
+                                str(ledger_row.get('Debit', '')),
+                                str(ledger_row.get('Credit', '')),
+                                str(ledger_row.get('Description', ''))
+                            ])
+                        csv_rows.append([])
+                        
+                        csv_rows.append(['STATEMENT ENTRIES (Components):'])
+                        csv_rows.append(['Date', 'Reference', 'Amount', 'Description'])
+                        for stmt_idx in split.get('statement_indices', []):
+                            if statement is not None and stmt_idx in statement.index:
+                                stmt_row = statement.loc[stmt_idx]
+                                csv_rows.append([
+                                    str(stmt_row.get('Date', '')),
+                                    str(stmt_row.get('Reference', '')),
+                                    str(stmt_row.get('Amount', '')),
+                                    str(stmt_row.get('Description', ''))
+                                ])
+                    
+                    csv_rows.append([])
                     csv_rows.append(['Total Amount:', split.get('total_amount', 0)])
                     csv_rows.append([])
                 
@@ -1586,10 +1651,10 @@ class FNBWorkflow:
             # BATCH 5: UNMATCHED LEDGER
             if 'unmatched_ledger' in results and not results['unmatched_ledger'].empty:
                 unmatched_ledger = results['unmatched_ledger']
-                csv_rows.append(['═' * 100])
+                csv_rows.append(['=' * 100])
                 csv_rows.append(['BATCH 5: UNMATCHED LEDGER ITEMS'])
                 csv_rows.append([f'Count: {len(unmatched_ledger)}'])
-                csv_rows.append(['═' * 100])
+                csv_rows.append(['=' * 100])
                 csv_rows.append([])
                 
                 csv_rows.append(unmatched_ledger.columns.tolist())
@@ -1602,10 +1667,10 @@ class FNBWorkflow:
             # BATCH 6: UNMATCHED STATEMENT
             if 'unmatched_statement' in results and not results['unmatched_statement'].empty:
                 unmatched_statement = results['unmatched_statement']
-                csv_rows.append(['═' * 100])
+                csv_rows.append(['=' * 100])
                 csv_rows.append(['BATCH 6: UNMATCHED STATEMENT ITEMS'])
                 csv_rows.append([f'Count: {len(unmatched_statement)}'])
-                csv_rows.append(['═' * 100])
+                csv_rows.append(['=' * 100])
                 csv_rows.append([])
                 
                 csv_rows.append(unmatched_statement.columns.tolist())
@@ -1616,9 +1681,9 @@ class FNBWorkflow:
                 csv_rows.append([])
             
             # SUMMARY SECTION
-            csv_rows.append(['═' * 100])
+            csv_rows.append(['=' * 100])
             csv_rows.append(['RECONCILIATION SUMMARY'])
-            csv_rows.append(['═' * 100])
+            csv_rows.append(['=' * 100])
             csv_rows.append([])
             csv_rows.append(['Perfect Matches:', results.get('perfect_match_count', 0)])
             csv_rows.append(['Fuzzy Matches:', results.get('fuzzy_match_count', 0)])
