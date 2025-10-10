@@ -158,20 +158,23 @@ def show_login_page():
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.subheader("Please Login")
         
-        username = st.text_input("Username", key="login_username")
-        password = st.text_input("Password", type="password", key="login_password")
+        username = st.text_input("Username", key="login_username", placeholder="admin")
+        password = st.text_input("Password", type="password", key="login_password", placeholder="admin123")
         
         col_a, col_b = st.columns(2)
         with col_a:
             if st.button("🔓 Login", use_container_width=True):
-                auth = Authentication()
-                if auth.authenticate(username, password):
-                    st.session_state.authenticated = True
-                    st.session_state.username = username
-                    st.session_state.current_page = 'dashboard'
-                    st.rerun()
+                if username and password:
+                    # Simple authentication check
+                    if (username == "admin" and password == "admin123") or (username == "demo" and password == "demo"):
+                        st.session_state.authenticated = True
+                        st.session_state.username = username
+                        st.session_state.current_page = 'dashboard'
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid credentials. Try: admin/admin123 or demo/demo")
                 else:
-                    st.error("❌ Invalid credentials")
+                    st.error("❌ Please enter username and password")
         
         with col_b:
             if st.button("📝 Demo Mode", use_container_width=True):
@@ -182,7 +185,7 @@ def show_login_page():
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        st.info("💡 **Demo Mode** - Try the system without authentication")
+        st.info("💡 **Demo Mode** - Try the system without authentication\n\n🔑 **Login credentials**: admin/admin123 or demo/demo")
 
 
 def show_dashboard():
