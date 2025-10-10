@@ -1566,84 +1566,128 @@ class FNBWorkflow:
                     csv_rows.append([])
                     csv_rows.append([])
             
-            # BATCH 4: SPLIT TRANSACTIONS
+            # BATCH 4: SPLIT TRANSACTIONS - GUI Style with actual transaction rows
             split_matches = results.get('split_matches', [])
             if split_matches:
                 csv_rows.append(['=' * 100])
-                csv_rows.append(['BATCH 4: SPLIT TRANSACTIONS (Many-to-One / One-to-Many)'])
+                csv_rows.append(['BATCH 4: SPLIT TRANSACTIONS'])
                 csv_rows.append([f'Count: {len(split_matches)}'])
                 csv_rows.append(['=' * 100])
                 csv_rows.append([])
                 
-                # Get ledger and statement from session state to show actual transaction details
+                # Get original dataframes from session state
                 ledger = st.session_state.get('fnb_ledger')
                 statement = st.session_state.get('fnb_statement')
                 
-                for i, split in enumerate(split_matches):
-                    csv_rows.append([f'--- Split Transaction #{i+1} ---'])
-                    csv_rows.append(['Type:', split.get('split_type', 'Unknown')])
-                    csv_rows.append([])
+                # Get column settings
+                settings = st.session_state.get('fnb_match_settings', {})
+                ledger_date_col = settings.get('ledger_date_col', 'Date')
+                ledger_ref_col = settings.get('ledger_ref_col', 'Reference')
+                ledger_debit_col = settings.get('ledger_debit_col', 'Debit')
+                ledger_credit_col = settings.get('ledger_credit_col', 'Credit')
+                stmt_date_col = settings.get('statement_date_col', 'Date')
+                stmt_ref_col = settings.get('statement_ref_col', 'Reference')
+                stmt_amt_col = settings.get('statement_amt_col', 'Amount')
+                
+                # Get all columns for ledger and statement (excluding normalized columns)
+                if ledger is not None:
+                    ledger_cols = [col for col in ledger.columns if not col.startswith('_')]
+                else:
+                    ledger_cols = []
+                
+                if statement is not None:
+                    stmt_cols = [col for col in statement.columns if not col.startswith('_')]
+                else:
+                    stmt_cols = []
+                
+                # Create header row with all columns
+                header_row = ledger_cols.copy()
+                for col in stmt_cols:
+                    # Add "_Statement" suffix if column name conflicts with ledger
+                    if col in ledger_cols:
+                        header_row.append(f"{col}_Statement")
+                    else:
+                        header_row.append(col)
+                header_row.extend(['Split_Type', 'Split_Count'])
+                csv_rows.append(header_row)
+                
+                # Process each split match
+                for split in split_matches:
+                    split_type = split.get('split_type', 'Unknown')
                     
-                    # Show the actual transaction details
-                    if split.get('split_type') == 'many_to_one':
-                        # Multiple ledger entries matching one statement
-                        csv_rows.append(['STATEMENT ENTRY (Target):'])
+                    if split_type == 'many_to_one':
+                        # Multiple ledger entries to one statement
                         stmt_idx = split.get('statement_idx')
+                        ledger_indices = split.get('ledger_indices', [])
+                        
                         if statement is not None and stmt_idx in statement.index:
                             stmt_row = statement.loc[stmt_idx]
-                            csv_rows.append(['Date', 'Reference', 'Amount', 'Description'])
-                            csv_rows.append([
-                                str(stmt_row.get('Date', '')),
-                                str(stmt_row.get('Reference', '')),
-                                str(stmt_row.get('Amount', '')),
-                                str(stmt_row.get('Description', ''))
-                            ])
-                        csv_rows.append([])
-                        
-                        csv_rows.append(['LEDGER ENTRIES (Components):'])
-                        csv_rows.append(['Date', 'Reference', 'Debit', 'Credit', 'Description'])
-                        for ledger_idx in split.get('ledger_indices', []):
-                            if ledger is not None and ledger_idx in ledger.index:
-                                ledger_row = ledger.loc[ledger_idx]
-                                csv_rows.append([
-                                    str(ledger_row.get('Date', '')),
-                                    str(ledger_row.get('Reference', '')),
-                                    str(ledger_row.get('Debit', '')),
-                                    str(ledger_row.get('Credit', '')),
-                                    str(ledger_row.get('Description', ''))
-                                ])
+                            
+                            # First row: First ledger with statement data
+                            if ledger_indices and ledger is not None:
+                                for idx_num, ledger_idx in enumerate(ledger_indices):
+                                    if ledger_idx in ledger.index:
+                                        ledger_row_data = ledger.loc[ledger_idx]
+                                        row_data = []
+                                        
+                                        # Add ledger columns
+                                        for col in ledger_cols:
+                                            val = ledger_row_data.get(col, '')
+                                            row_data.append(val if pd.notna(val) else '')
+                                        
+                                        # Add statement columns (only on first row)
+                                        if idx_num == 0:
+                                            for col in stmt_cols:
+                                                val = stmt_row.get(col, '')
+                                                row_data.append(val if pd.notna(val) else '')
+                                        else:
+                                            # Empty statement columns for subsequent rows
+                                            row_data.extend([''] * len(stmt_cols))
+                                        
+                                        # Add split info
+                                        if idx_num == 0:
+                                            row_data.extend(['Many→1', len(ledger_indices)])
+                                        else:
+                                            row_data.extend([f'↳ Part {idx_num+1}', ''])
+                                        
+                                        csv_rows.append(row_data)
                     
-                    elif split.get('split_type') == 'one_to_many':
-                        # One ledger entry matching multiple statements
-                        csv_rows.append(['LEDGER ENTRY (Target):'])
+                    elif split_type == 'one_to_many':
+                        # One ledger entry to multiple statements
                         ledger_idx = split.get('ledger_idx')
-                        if ledger is not None and ledger_idx in ledger.index:
-                            ledger_row = ledger.loc[ledger_idx]
-                            csv_rows.append(['Date', 'Reference', 'Debit', 'Credit', 'Description'])
-                            csv_rows.append([
-                                str(ledger_row.get('Date', '')),
-                                str(ledger_row.get('Reference', '')),
-                                str(ledger_row.get('Debit', '')),
-                                str(ledger_row.get('Credit', '')),
-                                str(ledger_row.get('Description', ''))
-                            ])
-                        csv_rows.append([])
+                        stmt_indices = split.get('statement_indices', [])
                         
-                        csv_rows.append(['STATEMENT ENTRIES (Components):'])
-                        csv_rows.append(['Date', 'Reference', 'Amount', 'Description'])
-                        for stmt_idx in split.get('statement_indices', []):
-                            if statement is not None and stmt_idx in statement.index:
-                                stmt_row = statement.loc[stmt_idx]
-                                csv_rows.append([
-                                    str(stmt_row.get('Date', '')),
-                                    str(stmt_row.get('Reference', '')),
-                                    str(stmt_row.get('Amount', '')),
-                                    str(stmt_row.get('Description', ''))
-                                ])
-                    
-                    csv_rows.append([])
-                    csv_rows.append(['Total Amount:', split.get('total_amount', 0)])
-                    csv_rows.append([])
+                        if ledger is not None and ledger_idx in ledger.index:
+                            ledger_row_data = ledger.loc[ledger_idx]
+                            
+                            # Process each statement
+                            if stmt_indices and statement is not None:
+                                for idx_num, stmt_idx in enumerate(stmt_indices):
+                                    if stmt_idx in statement.index:
+                                        stmt_row = statement.loc[stmt_idx]
+                                        row_data = []
+                                        
+                                        # Add ledger columns (only on first row)
+                                        if idx_num == 0:
+                                            for col in ledger_cols:
+                                                val = ledger_row_data.get(col, '')
+                                                row_data.append(val if pd.notna(val) else '')
+                                        else:
+                                            # Empty ledger columns for subsequent rows
+                                            row_data.extend([''] * len(ledger_cols))
+                                        
+                                        # Add statement columns
+                                        for col in stmt_cols:
+                                            val = stmt_row.get(col, '')
+                                            row_data.append(val if pd.notna(val) else '')
+                                        
+                                        # Add split info
+                                        if idx_num == 0:
+                                            row_data.extend(['1→Many', len(stmt_indices)])
+                                        else:
+                                            row_data.extend([f'↳ Part {idx_num+1}', ''])
+                                        
+                                        csv_rows.append(row_data)
                 
                 csv_rows.append([])
                 csv_rows.append([])
