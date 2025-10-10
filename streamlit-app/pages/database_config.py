@@ -85,7 +85,7 @@ def show_postgres_config():
             user = st.text_input(
                 "Username",
                 value=st.session_state.get('postgres_user', 'postgres'),
-                help="Database username"
+                help="Database username (use 'postgres' for Supabase)"
             )
             password = st.text_input(
                 "Password",
