@@ -27,17 +27,28 @@ class ExcelEditor:
         self.data = data.copy() if data is not None else pd.DataFrame()
         self.title = title
         self.key_prefix = key_prefix
-        
-        # Always use the latest data from parent (including dynamically added columns)
-        # This ensures we see columns added by Add Reference, RJ & Payment Ref, etc.
-        st.session_state[f'{key_prefix}_edited_data'] = self.data.copy()
-        
+
+        # Initialize edited_data only if it doesn't exist OR if column count changed
+        # This preserves paste/edit operations while allowing new columns to be added
+        if f'{key_prefix}_edited_data' not in st.session_state:
+            st.session_state[f'{key_prefix}_edited_data'] = self.data.copy()
+        else:
+            # Check if columns have changed (new columns added externally)
+            existing_cols = set(st.session_state[f'{key_prefix}_edited_data'].columns)
+            new_cols = set(self.data.columns)
+
+            # If new columns were added, merge them in
+            if new_cols != existing_cols:
+                added_cols = new_cols - existing_cols
+                for col in added_cols:
+                    st.session_state[f'{key_prefix}_edited_data'][col] = self.data[col]
+
         if f'{key_prefix}_show_editor' not in st.session_state:
             st.session_state[f'{key_prefix}_show_editor'] = False
-        
+
         if f'{key_prefix}_show_insert' not in st.session_state:
             st.session_state[f'{key_prefix}_show_insert'] = False
-        
+
         if f'{key_prefix}_show_delete' not in st.session_state:
             st.session_state[f'{key_prefix}_show_delete'] = False
     
@@ -105,18 +116,26 @@ class ExcelEditor:
                     st.rerun()
                 st.markdown("---")
         
-        # Bulk Paste from Excel
+        # Bulk Paste from Excel with Preview
         with st.expander("📋 Bulk Paste from Excel", expanded=False):
             st.markdown("**Paste multiple rows from Excel:**")
-            st.caption("1. Copy rows from Excel (Ctrl+C)\n2. Paste in the box below (Ctrl+V)\n3. Click 'Paste Data'")
-            
+            st.caption("1. Copy rows from Excel (Ctrl+C)\n2. Paste in the box below (Ctrl+V)\n3. Preview and validate\n4. Click 'Paste Data'")
+
             paste_data = st.text_area(
                 "Paste Excel data here (tab-separated)",
                 height=150,
                 key=f"{self.key_prefix}_paste_area",
                 placeholder="Copy from Excel and paste here..."
             )
-            
+
+            # Show preview if data is pasted
+            if paste_data and paste_data.strip():
+                preview_df = self._preview_paste_data(paste_data)
+                if preview_df is not None:
+                    st.markdown("**Preview (first 5 rows):**")
+                    st.dataframe(preview_df.head(5), use_container_width=True)
+                    st.caption(f"📊 Ready to paste: {len(preview_df)} rows × {len(preview_df.columns)} columns")
+
             col_p1, col_p2 = st.columns(2)
             with col_p1:
                 paste_position = st.selectbox(
@@ -124,7 +143,7 @@ class ExcelEditor:
                     ["End of data", "Replace all data", "Start of data"],
                     key=f"{self.key_prefix}_paste_pos"
                 )
-            
+
             with col_p2:
                 if st.button("📋 Paste Data", key=f"{self.key_prefix}_do_paste", use_container_width=True):
                     if paste_data and paste_data.strip():
@@ -143,13 +162,29 @@ class ExcelEditor:
                 key=f"{self.key_prefix}_col_action",
                 horizontal=True
             )
-            
+
             if col_action == "Add Column":
                 self._add_column_form()
             elif col_action == "Delete Column":
                 self._delete_column_form()
             else:
                 self._rename_column_form()
+
+        # Professional Data Manipulation Tools
+        with st.expander("🔧 Professional Data Tools", expanded=False):
+            tool_tabs = st.tabs(["🔍 Find & Replace", "🔀 Sort Data", "🧹 Remove Duplicates", "📊 Filter Data"])
+
+            with tool_tabs[0]:
+                self._find_replace_tool()
+
+            with tool_tabs[1]:
+                self._sort_data_tool()
+
+            with tool_tabs[2]:
+                self._remove_duplicates_tool()
+
+            with tool_tabs[3]:
+                self._filter_data_tool()
         
         # Main data editor
         st.markdown("### 📝 Edit Data")
@@ -184,13 +219,13 @@ class ExcelEditor:
         </script>
         """, unsafe_allow_html=True)
         
-        # Create proper column configuration based on dtypes
+        # Create proper column configuration based on ACTUAL dtypes (not column names)
         column_config = {}
         for col in edited_data.columns:
             dtype = str(edited_data[col].dtype)
-            
-            # Handle date/datetime columns
-            if 'date' in col.lower() or 'datetime' in dtype:
+
+            # ONLY configure datetime if the dtype is actually datetime, not just if name contains 'date'
+            if 'datetime' in dtype:
                 column_config[col] = st.column_config.DatetimeColumn(
                     col,
                     help=f"Date column",
@@ -210,11 +245,12 @@ class ExcelEditor:
                     help=f"Numeric column ({dtype})",
                     format="%d"
                 )
-            # Handle text columns
+            # Handle text columns (including date columns that are still strings)
             else:
                 column_config[col] = st.column_config.TextColumn(
                     col,
-                    help=f"Text column ({dtype})"
+                    help=f"Text column ({dtype})",
+                    width="medium"
                 )
         
         # Make data editor with proper column configuration and row selection
@@ -251,65 +287,200 @@ class ExcelEditor:
             [edited_data, pd.DataFrame([new_row])],
             ignore_index=True
         )
-    
-    def _bulk_paste(self, paste_text: str, position: str):
-        """Paste bulk data from Excel - Returns True if successful"""
+
+    def _preview_paste_data(self, paste_text: str) -> Optional[pd.DataFrame]:
+        """Preview pasted data before applying it"""
         try:
             edited_data = st.session_state[f'{self.key_prefix}_edited_data'].copy()
-            
+
+            # Split by newlines
+            lines = paste_text.replace('\r\n', '\n').strip().split('\n')
+            lines = [line for line in lines if line.strip()]
+
+            if not lines:
+                return None
+
+            # Split each line by tabs
+            rows = [line.split('\t') for line in lines]
+
+            # Get max columns
+            max_cols = max(len(row) for row in rows)
+
+            # Check if column count matches
+            if max_cols > len(edited_data.columns):
+                st.error(f"⚠️ Column mismatch: Pasted {max_cols} cols, table has {len(edited_data.columns)} cols")
+                return None
+
+            # Pad rows
+            for row in rows:
+                while len(row) < max_cols:
+                    row.append("")
+
+            # Create preview DataFrame with the right column names
+            preview_cols = edited_data.columns[:max_cols].tolist()
+            preview_df = pd.DataFrame(rows, columns=preview_cols)
+
+            return preview_df
+
+        except Exception as e:
+            st.error(f"❌ Preview error: {str(e)}")
+            return None
+    
+    def _bulk_paste(self, paste_text: str, position: str):
+        """Paste bulk data from Excel with intelligent type detection - Returns True if successful"""
+        try:
+            edited_data = st.session_state[f'{self.key_prefix}_edited_data'].copy()
+
             # Split by newlines (handle both \r\n and \n)
             lines = paste_text.replace('\r\n', '\n').strip().split('\n')
             lines = [line for line in lines if line.strip()]
-            
+
             if not lines:
                 st.error("❌ No data found in paste area!")
                 return False
-            
+
             # Split each line by tabs
             rows = [line.split('\t') for line in lines]
-            
-            # Pad rows to match table column count
+
+            # Validate column count
             max_cols = max(len(row) for row in rows)
-            
+
             if max_cols > len(edited_data.columns):
                 st.error(f"❌ Too many columns! Pasted data has {max_cols} columns, but table has {len(edited_data.columns)} columns.")
                 st.info(f"Table columns: {', '.join(edited_data.columns)}")
                 return False
-            
-            # Pad shorter rows with empty strings
+
+            # Pad shorter rows with empty strings - pad to match the FULL table columns
             for row in rows:
                 while len(row) < len(edited_data.columns):
                     row.append("")
-            
-            # Create DataFrame
-            pasted_df = pd.DataFrame(rows, columns=edited_data.columns)
-            
-            # Convert types to match original
+                # Truncate if too long
+                if len(row) > len(edited_data.columns):
+                    row = row[:len(edited_data.columns)]
+
+            # Create DataFrame with ALL table columns
+            pasted_df = pd.DataFrame(rows, columns=edited_data.columns.tolist())
+
+            # Smart type conversion to match original data types
+            conversion_errors = []
             for col in pasted_df.columns:
+                if col not in edited_data.columns:
+                    continue
+
+                # Get a sample of original data to determine type
                 original_dtype = str(edited_data[col].dtype)
-                
-                # Handle dates
+
+                # Skip if column has no data in pasted rows (all empty)
+                if pasted_df[col].astype(str).str.strip().eq('').all():
+                    continue
+
+                # Handle datetime columns with multiple format attempts
                 if 'date' in col.lower() or 'datetime' in original_dtype:
-                    pasted_df[col] = pd.to_datetime(pasted_df[col], format='%m/%d/%Y %H:%M:%S', errors='coerce')
-                    # Try alternative format if many failed
-                    if pasted_df[col].isna().sum() > len(pasted_df) * 0.5:
-                        pasted_df[col] = pd.to_datetime(pasted_df[col], format='%m/%d/%Y %H:%M', errors='coerce')
-                # Handle numbers
+                    # Store original values before conversion attempts
+                    original_values = pasted_df[col].copy()
+
+                    # Try multiple common date formats from Excel
+                    date_formats = [
+                        '%Y-%m-%d %H:%M:%S',  # Standard format
+                        '%m/%d/%Y %H:%M:%S',  # US format with time
+                        '%d/%m/%Y %H:%M:%S',  # EU format with time
+                        '%Y-%m-%d',           # ISO date only
+                        '%m/%d/%Y',           # US date only
+                        '%d/%m/%Y',           # EU date only
+                        '%Y/%m/%d %H:%M:%S',  # Alternative ISO with time
+                        '%d-%m-%Y %H:%M:%S',  # Alternative EU with time
+                        '%m-%d-%Y %H:%M:%S'   # Alternative US with time
+                    ]
+
+                    # Try formats in order
+                    converted = False
+                    best_conversion = None
+                    best_success_rate = 0
+
+                    for fmt in date_formats:
+                        try:
+                            temp_conversion = pd.to_datetime(original_values, format=fmt, errors='coerce')
+                            success_rate = temp_conversion.notna().sum() / len(temp_conversion)
+
+                            # Keep the conversion with the highest success rate
+                            if success_rate > best_success_rate:
+                                best_conversion = temp_conversion
+                                best_success_rate = success_rate
+
+                            # If we got >80% success, use this format
+                            if success_rate > 0.8:
+                                pasted_df[col] = temp_conversion
+                                converted = True
+                                break
+                        except:
+                            continue
+
+                    # If none worked well, try pandas' automatic inference
+                    if not converted and best_success_rate > 0:
+                        pasted_df[col] = best_conversion
+                        converted = True
+                    elif not converted:
+                        pasted_df[col] = pd.to_datetime(original_values, errors='coerce', infer_datetime_format=True)
+
+                    # Report if dates failed to parse
+                    failed_count = pasted_df[col].isna().sum()
+                    if failed_count > 0:
+                        conversion_errors.append(f"⚠️ {failed_count} date(s) in '{col}' could not be parsed")
+
+                # Handle numeric columns (int and float)
                 elif 'float' in original_dtype or 'int' in original_dtype:
-                    pasted_df[col] = pd.to_numeric(pasted_df[col], errors='ignore')
-            
+                    # Remove common formatting (commas, currency symbols)
+                    cleaned_values = pasted_df[col].astype(str).str.replace(',', '', regex=False)
+                    cleaned_values = cleaned_values.str.replace('$', '', regex=False)
+                    cleaned_values = cleaned_values.str.replace('€', '', regex=False)
+                    cleaned_values = cleaned_values.str.replace('£', '', regex=False)
+                    cleaned_values = cleaned_values.str.strip()
+
+                    # Convert to numeric
+                    pasted_df[col] = pd.to_numeric(cleaned_values, errors='coerce')
+
+                    # Maintain integer type if original was integer
+                    if 'int' in original_dtype:
+                        pasted_df[col] = pasted_df[col].fillna(0).astype('int64')
+
+                    # Report conversion issues
+                    failed_count = pasted_df[col].isna().sum()
+                    if failed_count > 0 and 'float' in original_dtype:
+                        conversion_errors.append(f"⚠️ {failed_count} value(s) in '{col}' could not be converted to number")
+
+                # Handle text columns - preserve as-is but convert to string
+                else:
+                    # Convert to string but keep empty strings as empty (don't replace with 'nan')
+                    pasted_df[col] = pasted_df[col].astype(str)
+                    # Only replace the string 'nan' that pandas creates, not actual data
+                    pasted_df[col] = pasted_df[col].replace({'nan': '', 'None': ''})
+
+            # Show conversion warnings if any
+            if conversion_errors:
+                st.warning("**Data Conversion Warnings:**\n" + "\n".join(conversion_errors[:5]))  # Show first 5
+
             # Apply based on position
+            # NOTE: Always convert datetime columns back to strings before storing
+            # This prevents Streamlit column config errors
+            for col in pasted_df.columns:
+                if pasted_df[col].dtype.name.startswith('datetime'):
+                    pasted_df[col] = pasted_df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+                    # Replace NaT with empty string
+                    pasted_df[col] = pasted_df[col].fillna('')
+
             if position == "Replace all data":
                 st.session_state[f'{self.key_prefix}_edited_data'] = pasted_df
             elif position == "Start of data":
                 st.session_state[f'{self.key_prefix}_edited_data'] = pd.concat([pasted_df, edited_data], ignore_index=True)
             else:  # End of data
                 st.session_state[f'{self.key_prefix}_edited_data'] = pd.concat([edited_data, pasted_df], ignore_index=True)
-            
+
             return True
-            
+
         except Exception as e:
             st.error(f"❌ Paste error: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
             return False
     
     def _insert_row_dialog(self):
@@ -443,6 +614,264 @@ class ExcelEditor:
                 st.rerun()
             elif not new_name:
                 st.error("❌ Please enter a new name")
+
+    def _find_replace_tool(self):
+        """Find and replace values in data"""
+        edited_data = st.session_state[f'{self.key_prefix}_edited_data']
+
+        if len(edited_data.columns) == 0:
+            st.warning("⚠️ No data to search")
+            return
+
+        with st.form(f"{self.key_prefix}_find_replace_form"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                search_col = st.selectbox(
+                    "Column to search",
+                    options=["All Columns"] + edited_data.columns.tolist(),
+                    key=f"{self.key_prefix}_search_col"
+                )
+
+            with col2:
+                search_type = st.radio(
+                    "Search type",
+                    ["Exact match", "Contains", "Starts with", "Ends with"],
+                    key=f"{self.key_prefix}_search_type",
+                    horizontal=True
+                )
+
+            find_value = st.text_input("Find", key=f"{self.key_prefix}_find_val")
+            replace_value = st.text_input("Replace with", key=f"{self.key_prefix}_replace_val")
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                find_btn = st.form_submit_button("🔍 Find", use_container_width=True)
+            with col_btn2:
+                replace_btn = st.form_submit_button("🔄 Replace All", use_container_width=True)
+
+            if find_btn and find_value:
+                # Find matches
+                matches = self._find_matches(edited_data, search_col, find_value, search_type)
+                if matches > 0:
+                    st.success(f"✅ Found {matches} match(es)")
+                else:
+                    st.info("No matches found")
+
+            if replace_btn and find_value:
+                # Perform replacement
+                count = self._replace_values(search_col, find_value, replace_value, search_type)
+                if count > 0:
+                    st.success(f"✅ Replaced {count} value(s)")
+                    st.rerun()
+                else:
+                    st.info("No matches found to replace")
+
+    def _find_matches(self, df: pd.DataFrame, column: str, value: str, search_type: str) -> int:
+        """Count matches in dataframe"""
+        count = 0
+        columns_to_search = df.columns if column == "All Columns" else [column]
+
+        for col in columns_to_search:
+            if df[col].dtype == 'object':
+                if search_type == "Exact match":
+                    count += (df[col].astype(str) == value).sum()
+                elif search_type == "Contains":
+                    count += df[col].astype(str).str.contains(value, case=False, na=False).sum()
+                elif search_type == "Starts with":
+                    count += df[col].astype(str).str.startswith(value, na=False).sum()
+                elif search_type == "Ends with":
+                    count += df[col].astype(str).str.endswith(value, na=False).sum()
+
+        return count
+
+    def _replace_values(self, column: str, find_value: str, replace_value: str, search_type: str) -> int:
+        """Replace values in dataframe"""
+        edited_data = st.session_state[f'{self.key_prefix}_edited_data'].copy()
+        count = 0
+        columns_to_search = edited_data.columns if column == "All Columns" else [column]
+
+        for col in columns_to_search:
+            if edited_data[col].dtype == 'object':
+                if search_type == "Exact match":
+                    mask = edited_data[col].astype(str) == find_value
+                    count += mask.sum()
+                    edited_data.loc[mask, col] = replace_value
+                elif search_type == "Contains":
+                    mask = edited_data[col].astype(str).str.contains(find_value, case=False, na=False)
+                    count += mask.sum()
+                    edited_data.loc[mask, col] = edited_data.loc[mask, col].astype(str).str.replace(find_value, replace_value, case=False)
+                elif search_type == "Starts with":
+                    mask = edited_data[col].astype(str).str.startswith(find_value, na=False)
+                    count += mask.sum()
+                    edited_data.loc[mask, col] = edited_data.loc[mask, col].astype(str).str.replace(f'^{find_value}', replace_value, regex=True)
+                elif search_type == "Ends with":
+                    mask = edited_data[col].astype(str).str.endswith(find_value, na=False)
+                    count += mask.sum()
+                    edited_data.loc[mask, col] = edited_data.loc[mask, col].astype(str).str.replace(f'{find_value}$', replace_value, regex=True)
+
+        st.session_state[f'{self.key_prefix}_edited_data'] = edited_data
+        return count
+
+    def _sort_data_tool(self):
+        """Sort data by columns"""
+        edited_data = st.session_state[f'{self.key_prefix}_edited_data']
+
+        if len(edited_data.columns) == 0:
+            st.warning("⚠️ No data to sort")
+            return
+
+        st.markdown("**Sort your data by one or more columns:**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            sort_col = st.selectbox(
+                "Sort by column",
+                options=edited_data.columns.tolist(),
+                key=f"{self.key_prefix}_sort_col"
+            )
+
+        with col2:
+            sort_order = st.radio(
+                "Order",
+                ["Ascending", "Descending"],
+                key=f"{self.key_prefix}_sort_order",
+                horizontal=True
+            )
+
+        if st.button("🔀 Sort Data", key=f"{self.key_prefix}_sort_btn", use_container_width=True):
+            ascending = (sort_order == "Ascending")
+            sorted_data = edited_data.sort_values(by=sort_col, ascending=ascending).reset_index(drop=True)
+            st.session_state[f'{self.key_prefix}_edited_data'] = sorted_data
+            st.success(f"✅ Data sorted by '{sort_col}' ({sort_order})")
+            st.rerun()
+
+    def _remove_duplicates_tool(self):
+        """Remove duplicate rows"""
+        edited_data = st.session_state[f'{self.key_prefix}_edited_data']
+
+        if len(edited_data) == 0:
+            st.warning("⚠️ No data available")
+            return
+
+        st.markdown("**Remove duplicate rows from your data:**")
+
+        dup_option = st.radio(
+            "Duplicate detection",
+            ["Based on all columns", "Based on specific columns"],
+            key=f"{self.key_prefix}_dup_option"
+        )
+
+        subset_cols = None
+        if dup_option == "Based on specific columns":
+            subset_cols = st.multiselect(
+                "Select columns to check for duplicates",
+                options=edited_data.columns.tolist(),
+                key=f"{self.key_prefix}_dup_cols"
+            )
+
+        keep_option = st.radio(
+            "Keep which duplicate?",
+            ["First occurrence", "Last occurrence"],
+            key=f"{self.key_prefix}_keep_option",
+            horizontal=True
+        )
+
+        # Show duplicate count
+        if dup_option == "Based on all columns":
+            dup_count = edited_data.duplicated().sum()
+        else:
+            if subset_cols:
+                dup_count = edited_data.duplicated(subset=subset_cols).sum()
+            else:
+                dup_count = 0
+
+        st.info(f"📊 Found {dup_count} duplicate row(s)")
+
+        if st.button("🧹 Remove Duplicates", key=f"{self.key_prefix}_remove_dup_btn", use_container_width=True):
+            if dup_option == "Based on specific columns" and not subset_cols:
+                st.error("❌ Please select at least one column")
+                return
+
+            keep = 'first' if keep_option == "First occurrence" else 'last'
+            if dup_option == "Based on all columns":
+                cleaned_data = edited_data.drop_duplicates(keep=keep).reset_index(drop=True)
+            else:
+                cleaned_data = edited_data.drop_duplicates(subset=subset_cols, keep=keep).reset_index(drop=True)
+
+            removed = len(edited_data) - len(cleaned_data)
+            st.session_state[f'{self.key_prefix}_edited_data'] = cleaned_data
+            st.success(f"✅ Removed {removed} duplicate row(s)")
+            st.rerun()
+
+    def _filter_data_tool(self):
+        """Filter data based on conditions"""
+        edited_data = st.session_state[f'{self.key_prefix}_edited_data']
+
+        if len(edited_data.columns) == 0:
+            st.warning("⚠️ No data to filter")
+            return
+
+        st.markdown("**Filter rows based on conditions:**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            filter_col = st.selectbox(
+                "Column to filter",
+                options=edited_data.columns.tolist(),
+                key=f"{self.key_prefix}_filter_col"
+            )
+
+        with col2:
+            filter_op = st.selectbox(
+                "Condition",
+                ["Equals", "Contains", "Greater than", "Less than", "Not empty", "Is empty"],
+                key=f"{self.key_prefix}_filter_op"
+            )
+
+        filter_value = ""
+        if filter_op not in ["Not empty", "Is empty"]:
+            filter_value = st.text_input("Value", key=f"{self.key_prefix}_filter_val")
+
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("🔍 Show Filtered", key=f"{self.key_prefix}_show_filter_btn", use_container_width=True):
+                filtered = self._apply_filter(edited_data, filter_col, filter_op, filter_value)
+                if filtered is not None:
+                    st.markdown(f"**Preview ({len(filtered)} rows):**")
+                    st.dataframe(filtered.head(20), use_container_width=True)
+
+        with col_btn2:
+            if st.button("✂️ Keep Only Filtered", key=f"{self.key_prefix}_keep_filter_btn", use_container_width=True):
+                filtered = self._apply_filter(edited_data, filter_col, filter_op, filter_value)
+                if filtered is not None and len(filtered) > 0:
+                    st.session_state[f'{self.key_prefix}_edited_data'] = filtered.reset_index(drop=True)
+                    st.success(f"✅ Kept {len(filtered)} filtered row(s), removed {len(edited_data) - len(filtered)} row(s)")
+                    st.rerun()
+                elif filtered is not None:
+                    st.warning("⚠️ No rows match the filter. Data unchanged.")
+
+    def _apply_filter(self, df: pd.DataFrame, column: str, operation: str, value: str) -> Optional[pd.DataFrame]:
+        """Apply filter to dataframe"""
+        try:
+            if operation == "Equals":
+                return df[df[column].astype(str) == value]
+            elif operation == "Contains":
+                return df[df[column].astype(str).str.contains(value, case=False, na=False)]
+            elif operation == "Greater than":
+                return df[pd.to_numeric(df[column], errors='coerce') > float(value)]
+            elif operation == "Less than":
+                return df[pd.to_numeric(df[column], errors='coerce') < float(value)]
+            elif operation == "Not empty":
+                return df[df[column].notna() & (df[column].astype(str).str.strip() != '')]
+            elif operation == "Is empty":
+                return df[df[column].isna() | (df[column].astype(str).str.strip() == '')]
+            return df
+        except Exception as e:
+            st.error(f"❌ Filter error: {str(e)}")
+            return None
 
 
 def show_data_viewer(data: pd.DataFrame, title: str = "Data Viewer", key_prefix: str = "viewer"):
