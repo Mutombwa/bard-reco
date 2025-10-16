@@ -1,0 +1,22 @@
+# Streamlit Configuration
+# ======================
+
+[server]
+port = 8501
+headless = true
+enableCORS = true
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"
+
+[theme]
+primaryColor = "#3498db"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[runner]
+magicEnabled = true
