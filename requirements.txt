@@ -1,0 +1,29 @@
+# =============================================
+# BARD-RECO Streamlit Application Requirements
+# Optimized for Streamlit Cloud Deployment
+# =============================================
+
+# Core Framework
+streamlit>=1.28.0,<2.0.0
+
+# Data Processing & Analysis
+pandas>=2.0.0,<3.0.0
+numpy>=1.24.0,<2.0.0
+
+# Excel/CSV File Handling
+openpyxl>=3.1.0
+xlsxwriter>=3.1.0
+
+# Fuzzy String Matching (Required for reconciliation)
+rapidfuzz>=3.0.0
+fuzzywuzzy>=0.18.0
+python-Levenshtein>=0.21.0
+
+# Data Visualization
+plotly>=5.0.0
+
+# Date/Time Utilities
+python-dateutil>=2.8.0
+
+# Standard Library Extensions (included with Python, but explicit for clarity)
+# json, hashlib, pathlib, datetime, typing, collections, re, threading, concurrent.futures

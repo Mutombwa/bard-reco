@@ -1,0 +1,25 @@
+# ==============================================
+# Streamlit Configuration
+# Optimized for Streamlit Cloud Deployment
+# ==============================================
+
+[server]
+port = 8501
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#3498db"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[runner]
+magicEnabled = true
+fastReruns = true
