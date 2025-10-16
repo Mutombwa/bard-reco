@@ -161,6 +161,58 @@ class BidvestWorkflow:
                     st.success(f"✅ Loaded {len(st.session_state.bidvest_statement)} statement rows")
                 except Exception as e:
                     st.error(f"❌ Error loading statement: {str(e)}")
+        
+        # Add View & Edit Data section
+        if st.session_state.bidvest_ledger is not None or st.session_state.bidvest_statement is not None:
+            st.markdown("---")
+            st.subheader("👁️ Step 1.5: View & Edit Data")
+            st.info("💡 **Edit your data before reconciliation:** View, add rows, delete rows, copy/paste from Excel, and more!")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.session_state.bidvest_ledger is not None:
+                    if st.button("📊 View & Edit Ledger", key='bidvest_view_edit_ledger_btn', use_container_width=True, type="secondary"):
+                        st.session_state.bidvest_show_ledger_editor = True
+            
+            with col2:
+                if st.session_state.bidvest_statement is not None:
+                    if st.button("📊 View & Edit Statement", key='bidvest_view_edit_statement_btn', use_container_width=True, type="secondary"):
+                        st.session_state.bidvest_show_statement_editor = True
+            
+            # Show Ledger Editor
+            if st.session_state.get('bidvest_show_ledger_editor', False):
+                st.markdown("---")
+                from utils.excel_editor import ExcelEditor
+                editor = ExcelEditor(st.session_state.bidvest_ledger, "📗 Ledger Editor", "bidvest_ledger")
+                saved_data = editor.render()
+                
+                if saved_data is not None:
+                    st.session_state.bidvest_ledger = saved_data
+                    st.session_state.bidvest_show_ledger_editor = False
+                    st.success("✅ Ledger data saved successfully!")
+                    st.rerun()
+                
+                if st.button("❌ Close Editor", key='bidvest_close_ledger_editor'):
+                    st.session_state.bidvest_show_ledger_editor = False
+                    st.rerun()
+            
+            # Show Statement Editor
+            if st.session_state.get('bidvest_show_statement_editor', False):
+                st.markdown("---")
+                from utils.excel_editor import ExcelEditor
+                editor = ExcelEditor(st.session_state.bidvest_statement, "📘 Statement Editor", "bidvest_statement")
+                saved_data = editor.render()
+                
+                if saved_data is not None:
+                    st.session_state.bidvest_statement = saved_data
+                    st.session_state.bidvest_show_statement_editor = False
+                    st.success("✅ Statement data saved successfully!")
+                    st.rerun()
+                
+                if st.button("❌ Close Editor", key='bidvest_close_statement_editor'):
+                    st.session_state.bidvest_show_statement_editor = False
+                    st.rerun()
 
         # Reference Extraction Feature
         if st.session_state.bidvest_ledger is not None:
