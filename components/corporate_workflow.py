@@ -212,11 +212,10 @@ class CorporateWorkflow:
         df['_debit'] = pd.to_numeric(df[debit_col], errors='coerce').fillna(0).abs()
         df['_credit'] = pd.to_numeric(df[credit_col], errors='coerce').fillna(0).abs()
 
-        # Clean references - replace blanks with a unique marker to prevent matching
+        # Clean references
         df['_reference'] = df[ref_col].astype(str).str.strip().str.upper()
         
-        # CRITICAL FIX: Mark ALL blank/empty references with unique identifiers
-        # This ensures blank references NEVER match with each other
+        # Track blank references for validation during matching
         blank_conditions = (
             (df['_reference'] == '') |
             (df['_reference'] == 'NAN') |
@@ -226,16 +225,15 @@ class CorporateWorkflow:
             (df['_reference'].isna())
         )
         
-        # Assign unique blank markers to each blank reference
-        blank_indices = df.index[blank_conditions].tolist()
-        for idx in blank_indices:
-            df.at[idx, '_reference'] = f'__BLANK_{idx}__'
-        
-        # Track original blank status for reporting
+        # Mark blank references but DON'T modify the _reference column
+        # This allows amount-based matching to work while preventing blank-to-blank matches
         df['_is_blank_ref'] = blank_conditions
         
         # Count blank references for reporting
         total_blank_refs = blank_conditions.sum()
+        
+        # Replace actual blank values with empty string for consistency
+        df.loc[blank_conditions, '_reference'] = ''
 
         df['_journal'] = df[journal_col].astype(str).str.strip()
         df['_net_diff'] = df['_debit'] - df['_credit']  # Debit - Credit
@@ -294,7 +292,8 @@ class CorporateWorkflow:
         status_placeholder.info("✅ **Step 3/7:** Processing Batch 2 - Exact Match Transactions...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
         
-        # CRITICAL: Filter out transactions with blank references BEFORE processing
+        # CRITICAL: NO blank references allowed in Batch 2
+        # Filter out ALL transactions with blank references
         unmatched_df = unmatched_df[~unmatched_df['_is_blank_ref']].copy()
 
         batch2_rows = []  # Store paired rows to maintain order
@@ -303,8 +302,8 @@ class CorporateWorkflow:
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # Skip if too few transactions
-            if len(group) < 2:
+            # Skip if too few transactions or blank reference
+            if len(group) < 2 or ref == '':
                 continue
 
             # Separate into debit and credit transactions
@@ -339,7 +338,7 @@ class CorporateWorkflow:
                     j = valid_matches[0]  # Take first valid match
 
                     if credit_indices[j] not in matched_indices:
-                        # Add paired rows
+                        # Add paired rows (no blank check needed - already filtered)
                         batch2_rows.append(df.loc[debit_indices[i]])
                         batch2_rows.append(df.loc[credit_indices[j]])
                         batch2_indices.add(debit_indices[i])
@@ -356,16 +355,27 @@ class CorporateWorkflow:
         status_placeholder.info("📊 **Step 4/7:** Processing Batch 3 - Foreign Debit Include Commission...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
         
-        # CRITICAL: Filter out transactions with blank references BEFORE processing
+        # CRITICAL: NO blank references allowed in Batch 3
+        # Multiple layers of filtering to ensure NO blank references get through
         unmatched_df = unmatched_df[~unmatched_df['_is_blank_ref']].copy()
+        
+        # Additional explicit check: remove any rows where reference is empty or invalid
+        unmatched_df = unmatched_df[
+            (unmatched_df['_reference'] != '') & 
+            (unmatched_df['_reference'] != '0') &
+            (unmatched_df['_reference'] != 'NAN') &
+            (unmatched_df['_reference'] != 'NONE') &
+            (unmatched_df['_reference'] != 'NULL') &
+            (~unmatched_df['_reference'].isna())
+        ].copy()
         
         batch3_rows = []
 
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # Skip if too few transactions (blank refs already filtered out)
-            if len(group) < 2:
+            # Skip if too few transactions or blank reference
+            if len(group) < 2 or ref == '' or ref == '0':
                 continue
 
             # Separate debit and credit transactions
@@ -398,6 +408,12 @@ class CorporateWorkflow:
                     j = valid_matches[0]
 
                     if credit_indices[j] not in matched_indices:
+                        # ADDITIONAL SAFETY CHECK: Verify neither transaction has blank reference
+                        if df.loc[debit_indices[i], '_is_blank_ref'] or df.loc[credit_indices[j], '_is_blank_ref']:
+                            # Skip this match - one or both have blank references
+                            continue
+                        
+                        # Add paired rows (no blank check needed - already filtered)
                         batch3_rows.append(df.loc[debit_indices[i]])
                         batch3_rows.append(df.loc[credit_indices[j]])
                         matched_indices.add(debit_indices[i])
@@ -412,7 +428,8 @@ class CorporateWorkflow:
         status_placeholder.info("📊 **Step 5/7:** Processing Batch 4 - Foreign Credits Include Commission...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
         
-        # CRITICAL: Filter out transactions with blank references BEFORE processing
+        # CRITICAL: NO blank references allowed in Batch 4
+        # Filter out ALL transactions with blank references
         unmatched_df = unmatched_df[~unmatched_df['_is_blank_ref']].copy()
         
         batch4_rows = []
@@ -420,8 +437,8 @@ class CorporateWorkflow:
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # Skip if too few transactions (blank refs already filtered out)
-            if len(group) < 2:
+            # Skip if too few transactions or blank reference
+            if len(group) < 2 or ref == '':
                 continue
 
             # Separate debit and credit transactions
@@ -454,6 +471,7 @@ class CorporateWorkflow:
                     j = valid_matches[0]
 
                     if credit_indices[j] not in matched_indices:
+                        # Add paired rows (no blank check needed - already filtered)
                         batch4_rows.append(df.loc[debit_indices[i]])
                         batch4_rows.append(df.loc[credit_indices[j]])
                         matched_indices.add(debit_indices[i])
@@ -468,7 +486,8 @@ class CorporateWorkflow:
         status_placeholder.info("📊 **Step 6/7:** Processing Batch 5 - Common References & Rate Differences...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
         
-        # CRITICAL: Filter out transactions with blank references BEFORE processing
+        # CRITICAL: NO blank references allowed in Batch 5
+        # Filter out ALL transactions with blank references
         unmatched_df = unmatched_df[~unmatched_df['_is_blank_ref']].copy()
         
         batch5_rows = []
@@ -476,8 +495,8 @@ class CorporateWorkflow:
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # Skip if too few transactions (blank refs already filtered out)
-            if len(group) < 2:
+            # Skip if too few transactions or blank reference
+            if len(group) < 2 or ref == '':
                 continue
 
             # Separate debit and credit transactions
@@ -510,6 +529,7 @@ class CorporateWorkflow:
                     j = valid_matches[0]
 
                     if credit_indices[j] not in matched_indices:
+                        # Add paired rows (no blank check needed - already filtered)
                         batch5_rows.append(df.loc[debit_indices[i]])
                         batch5_rows.append(df.loc[credit_indices[j]])
                         matched_indices.add(debit_indices[i])
