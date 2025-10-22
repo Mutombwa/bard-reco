@@ -20,8 +20,8 @@ from collections import defaultdict
 import time
 import re
 
-class CorporateWorkflow:
-    """Ultra-fast Corporate Settlement Workflow - OPTIMIZED"""
+class CorporateWorkflowOptimized:
+    """Ultra-fast Corporate Settlement Workflow"""
 
     def __init__(self):
         self.initialize_session_state()
@@ -494,84 +494,8 @@ class CorporateWorkflow:
             st.rerun()
 
     def render_results(self):
-        """Render reconciliation results"""
-
-        results = st.session_state.corporate_results
-        stats = results['stats']
-
-        st.markdown("## 🎉 Corporate Settlement Results")
-
-        processing_time = stats.get('processing_time', 0)
-        rows_per_sec = stats['total'] / processing_time if processing_time > 0 else 0
-        st.success(f"⚡ **Ultra-Fast Processing:** {stats['total']:,} rows in {processing_time:.2f}s ({rows_per_sec:,.0f} rows/sec)")
-
-        # Export buttons
-        st.markdown("### 📥 Export Results")
-        col_exp1, col_exp2 = st.columns(2)
-
-        all_batches = []
-        batch_configs = [
-            ('batch1', 'Correcting Journal Batch'),
-            ('batch2', 'Exact Match Batch'),
-            ('batch3', 'Foreign Debit Include Commission'),
-            ('batch4', 'Foreign Credits Include Commission'),
-            ('batch5', 'Common References & Diff Caused By Diff Rates'),
-            ('batch6', 'Unmatched Transactions')
-        ]
-
-        for batch_key, batch_title in batch_configs:
-            batch_df = results[batch_key].copy()
-            if not batch_df.empty:
-                display_df = batch_df.drop(columns=[c for c in batch_df.columns if c.startswith('_')], errors='ignore')
-                header_dict = {col: [batch_title if col == display_df.columns[0] else ''] for col in display_df.columns}
-                header_row = pd.DataFrame(header_dict)
-                empty_row = pd.DataFrame({col: [''] for col in display_df.columns})
-                all_batches.extend([header_row, display_df, empty_row])
-
-        if all_batches:
-            combined_df = pd.concat(all_batches, ignore_index=True)
-
-            with col_exp1:
-                from io import BytesIO
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    combined_df.to_excel(writer, index=False, sheet_name='Results')
-                excel_data = output.getvalue()
-                st.download_button("📊 Download Excel", excel_data, "corporate_results.xlsx",
-                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 use_container_width=True)
-
-            with col_exp2:
-                csv_data = combined_df.to_csv(index=False).encode('utf-8')
-                st.download_button("📄 Download CSV", csv_data, "corporate_results.csv", "text/csv",
-                                 use_container_width=True)
-
-        # Summary metrics
-        st.markdown("### 📊 Summary")
-        col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
-        with col1:
-            st.metric("Total", f"{stats['total']:,}")
-        with col2:
-            st.metric("Batch 1", f"{stats['batch1']:,}")
-        with col3:
-            st.metric("Batch 2", f"{stats['batch2']:,}")
-        with col4:
-            st.metric("Batch 3", f"{stats['batch3']:,}")
-        with col5:
-            st.metric("Batch 4", f"{stats['batch4']:,}")
-        with col6:
-            st.metric("Batch 5", f"{stats['batch5']:,}")
-        with col7:
-            st.metric("Batch 6", f"{stats['batch6']:,}")
-
-        # Display batches
-        st.markdown("---")
-        for batch_key, batch_title in batch_configs:
-            st.markdown(f'<p style="font-family: Calibri; font-size: 18px; font-weight: bold;">{batch_title}</p>', unsafe_allow_html=True)
-            batch_df = results[batch_key]
-            if not batch_df.empty:
-                display_df = batch_df.drop(columns=[c for c in batch_df.columns if c.startswith('_')], errors='ignore')
-                st.dataframe(display_df, use_container_width=True, height=400)
-                st.info(f"✅ {len(batch_df):,} transactions")
-            else:
-                st.info("No transactions in this batch")
+        """Render results - REUSE EXISTING render_results from original corporate_workflow.py"""
+        # Import the render_results method from the original workflow
+        from components.corporate_workflow import CorporateWorkflow
+        original = CorporateWorkflow()
+        original.render_results()
