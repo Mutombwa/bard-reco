@@ -214,9 +214,28 @@ class CorporateWorkflow:
 
         # Clean references - replace blanks with a unique marker to prevent matching
         df['_reference'] = df[ref_col].astype(str).str.strip().str.upper()
-        # Replace empty/null references with unique values to prevent blank matching
-        blank_mask = df['_reference'].isin(['', 'NAN', 'NONE', 'NULL', '0'])
-        df.loc[blank_mask, '_reference'] = ['__BLANK_' + str(i) + '__' for i in range(blank_mask.sum())]
+        
+        # CRITICAL FIX: Mark ALL blank/empty references with unique identifiers
+        # This ensures blank references NEVER match with each other
+        blank_conditions = (
+            (df['_reference'] == '') |
+            (df['_reference'] == 'NAN') |
+            (df['_reference'] == 'NONE') |
+            (df['_reference'] == 'NULL') |
+            (df['_reference'] == '0') |
+            (df['_reference'].isna())
+        )
+        
+        # Assign unique blank markers to each blank reference
+        blank_indices = df.index[blank_conditions].tolist()
+        for idx in blank_indices:
+            df.at[idx, '_reference'] = f'__BLANK_{idx}__'
+        
+        # Track original blank status for reporting
+        df['_is_blank_ref'] = blank_conditions
+        
+        # Count blank references for reporting
+        total_blank_refs = blank_conditions.sum()
 
         df['_journal'] = df[journal_col].astype(str).str.strip()
         df['_net_diff'] = df['_debit'] - df['_credit']  # Debit - Credit
@@ -224,7 +243,7 @@ class CorporateWorkflow:
         
         progress_bar.progress(10)
         step1_time = time.time() - start_time
-        metrics_placeholder.success(f"✅ Data prepared in {step1_time:.2f}s | {len(df):,} rows processed")
+        metrics_placeholder.success(f"✅ Data prepared in {step1_time:.2f}s | {len(df):,} rows processed | ⚠️ {total_blank_refs:,} blank references detected")
 
         # Initialize batches
         batch1_rows = []  # Correcting Journals (paired)
@@ -274,6 +293,9 @@ class CorporateWorkflow:
         # BATCH 2: Exact Match (Same Reference + Amounts match exactly) - OPTIMIZED
         status_placeholder.info("✅ **Step 3/7:** Processing Batch 2 - Exact Match Transactions...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
+        
+        # CRITICAL: Filter out transactions with blank references BEFORE processing
+        unmatched_df = unmatched_df[~unmatched_df['_is_blank_ref']].copy()
 
         batch2_rows = []  # Store paired rows to maintain order
 
@@ -281,11 +303,8 @@ class CorporateWorkflow:
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # CRITICAL FIX: Do NOT match if reference is blank/empty OR has blank marker!
-            if (len(group) < 2 or
-                ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or
-                str(ref).strip() == '' or
-                str(ref).startswith('__BLANK_')):  # Skip blank markers
+            # Skip if too few transactions
+            if len(group) < 2:
                 continue
 
             # Separate into debit and credit transactions
@@ -309,16 +328,16 @@ class CorporateWorkflow:
             for i, debit_amt in enumerate(debit_amounts):
                 if i in used_debits or debit_indices[i] in matched_indices:
                     continue
-                    
+
                 # Vectorized difference calculation
                 diffs = np.abs(credit_amounts - debit_amt)
-                
+
                 # Find EXACT match (diff = 0) or very close (< 0.01 for rounding errors)
                 valid_matches = np.where((diffs < 0.01) & ~np.isin(np.arange(len(credit_amounts)), list(used_credits)))[0]
-                
+
                 if len(valid_matches) > 0:
                     j = valid_matches[0]  # Take first valid match
-                    
+
                     if credit_indices[j] not in matched_indices:
                         # Add paired rows
                         batch2_rows.append(df.loc[debit_indices[i]])
@@ -336,16 +355,17 @@ class CorporateWorkflow:
         # BATCH 3: Foreign Debit Include Commission (Debit > Credit, diff >= 1) - OPTIMIZED
         status_placeholder.info("📊 **Step 4/7:** Processing Batch 3 - Foreign Debit Include Commission...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
+        
+        # CRITICAL: Filter out transactions with blank references BEFORE processing
+        unmatched_df = unmatched_df[~unmatched_df['_is_blank_ref']].copy()
+        
         batch3_rows = []
 
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # CRITICAL FIX: Do NOT match if reference is blank/empty OR has blank marker!
-            if (len(group) < 2 or
-                ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or
-                str(ref).strip() == '' or
-                str(ref).startswith('__BLANK_')):  # Skip blank markers
+            # Skip if too few transactions (blank refs already filtered out)
+            if len(group) < 2:
                 continue
 
             # Separate debit and credit transactions
@@ -367,16 +387,16 @@ class CorporateWorkflow:
             for i, debit_amt in enumerate(debit_amounts):
                 if i in used_debits or debit_indices[i] in matched_indices:
                     continue
-                
+
                 # Calculate differences (Debit - Credit)
                 diffs = debit_amt - credit_amounts
-                
+
                 # Find matches where Debit is higher by at least 1
                 valid_matches = np.where((diffs >= 1) & ~np.isin(np.arange(len(credit_amounts)), list(used_credits)))[0]
-                
+
                 if len(valid_matches) > 0:
                     j = valid_matches[0]
-                    
+
                     if credit_indices[j] not in matched_indices:
                         batch3_rows.append(df.loc[debit_indices[i]])
                         batch3_rows.append(df.loc[credit_indices[j]])
@@ -391,16 +411,17 @@ class CorporateWorkflow:
         # BATCH 4: Foreign Credits Include Commission (Credit > Debit, diff >= 1) - OPTIMIZED
         status_placeholder.info("📊 **Step 5/7:** Processing Batch 4 - Foreign Credits Include Commission...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
+        
+        # CRITICAL: Filter out transactions with blank references BEFORE processing
+        unmatched_df = unmatched_df[~unmatched_df['_is_blank_ref']].copy()
+        
         batch4_rows = []
 
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # CRITICAL FIX: Do NOT match if reference is blank/empty OR has blank marker!
-            if (len(group) < 2 or
-                ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or
-                str(ref).strip() == '' or
-                str(ref).startswith('__BLANK_')):  # Skip blank markers
+            # Skip if too few transactions (blank refs already filtered out)
+            if len(group) < 2:
                 continue
 
             # Separate debit and credit transactions
@@ -422,16 +443,16 @@ class CorporateWorkflow:
             for i, debit_amt in enumerate(debit_amounts):
                 if i in used_debits or debit_indices[i] in matched_indices:
                     continue
-                
+
                 # Calculate differences (Credit - Debit)
                 diffs = credit_amounts - debit_amt
-                
+
                 # Find matches where Credit is higher by at least 1
                 valid_matches = np.where((diffs >= 1) & ~np.isin(np.arange(len(credit_amounts)), list(used_credits)))[0]
-                
+
                 if len(valid_matches) > 0:
                     j = valid_matches[0]
-                    
+
                     if credit_indices[j] not in matched_indices:
                         batch4_rows.append(df.loc[debit_indices[i]])
                         batch4_rows.append(df.loc[credit_indices[j]])
@@ -446,16 +467,17 @@ class CorporateWorkflow:
         # BATCH 5: Common References & Diff Caused By Diff Rates (0.5 <= diff < 1) - OPTIMIZED
         status_placeholder.info("📊 **Step 6/7:** Processing Batch 5 - Common References & Rate Differences...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
+        
+        # CRITICAL: Filter out transactions with blank references BEFORE processing
+        unmatched_df = unmatched_df[~unmatched_df['_is_blank_ref']].copy()
+        
         batch5_rows = []
 
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # CRITICAL FIX: Do NOT match if reference is blank/empty OR has blank marker!
-            if (len(group) < 2 or
-                ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or
-                str(ref).strip() == '' or
-                str(ref).startswith('__BLANK_')):  # Skip blank markers
+            # Skip if too few transactions (blank refs already filtered out)
+            if len(group) < 2:
                 continue
 
             # Separate debit and credit transactions
@@ -477,16 +499,16 @@ class CorporateWorkflow:
             for i, debit_amt in enumerate(debit_amounts):
                 if i in used_debits or debit_indices[i] in matched_indices:
                     continue
-                
+
                 # Calculate absolute differences
                 diffs = np.abs(credit_amounts - debit_amt)
-                
+
                 # Find matches where 0.01 <= diff < 1 (captures all small rate differences)
                 valid_matches = np.where((diffs >= 0.01) & (diffs < 1) & ~np.isin(np.arange(len(credit_amounts)), list(used_credits)))[0]
-                
+
                 if len(valid_matches) > 0:
                     j = valid_matches[0]
-                    
+
                     if credit_indices[j] not in matched_indices:
                         batch5_rows.append(df.loc[debit_indices[i]])
                         batch5_rows.append(df.loc[credit_indices[j]])
@@ -533,6 +555,14 @@ class CorporateWorkflow:
         # Validation checks
         has_duplicates = total_output_rows != len(df)
         sum_mismatch = abs(original_debit_sum - output_debit_sum) > 0.01 or abs(original_credit_sum - output_credit_sum) > 0.01
+        
+        # Count blank references in each batch for verification
+        blank_refs_in_batch1 = batch1_df['_is_blank_ref'].sum() if not batch1_df.empty and '_is_blank_ref' in batch1_df.columns else 0
+        blank_refs_in_batch2 = batch2_df['_is_blank_ref'].sum() if not batch2_df.empty and '_is_blank_ref' in batch2_df.columns else 0
+        blank_refs_in_batch3 = batch3_df['_is_blank_ref'].sum() if not batch3_df.empty and '_is_blank_ref' in batch3_df.columns else 0
+        blank_refs_in_batch4 = batch4_df['_is_blank_ref'].sum() if not batch4_df.empty and '_is_blank_ref' in batch4_df.columns else 0
+        blank_refs_in_batch5 = batch5_df['_is_blank_ref'].sum() if not batch5_df.empty and '_is_blank_ref' in batch5_df.columns else 0
+        blank_refs_in_batch6 = batch6_df['_is_blank_ref'].sum() if not batch6_df.empty and '_is_blank_ref' in batch6_df.columns else 0
 
         results = {
             'batch1': batch1_df,
@@ -550,6 +580,14 @@ class CorporateWorkflow:
                 'batch5': len(batch5_df),
                 'batch6': len(batch6_df),
                 'processing_time': elapsed_time,
+                # Blank reference tracking
+                'total_blank_refs': total_blank_refs,
+                'blank_refs_batch1': blank_refs_in_batch1,
+                'blank_refs_batch2': blank_refs_in_batch2,
+                'blank_refs_batch3': blank_refs_in_batch3,
+                'blank_refs_batch4': blank_refs_in_batch4,
+                'blank_refs_batch5': blank_refs_in_batch5,
+                'blank_refs_batch6': blank_refs_in_batch6,
                 # Validation metrics
                 'original_rows': len(df),
                 'output_rows': total_output_rows,
@@ -592,6 +630,19 @@ class CorporateWorkflow:
 
             Please review the results carefully!
             """)
+        
+        # Build blank reference warning if needed
+        blank_warning = ""
+        if total_blank_refs > 0:
+            blank_warning = f"""
+        **⚠️ Blank Reference Handling:**
+        - 🔍 **Total Blank References Found**: {total_blank_refs:,} transactions
+        - 📋 **In Batch 1 (Correcting)**: {blank_refs_in_batch1:,} (allowed for correcting journals)
+        - ❌ **In Batch 6 (Unmatched)**: {blank_refs_in_batch6:,} (all other blanks)
+        - ✅ **Batches 2-5 (Matching)**: {blank_refs_in_batch2 + blank_refs_in_batch3 + blank_refs_in_batch4 + blank_refs_in_batch5:,} (should be 0!)
+        
+        💡 **Note**: Only Correcting Journals (Batch 1) can have blank references. All other blank references go to Unmatched (Batch 6).
+        """
 
         st.success(f"""
         ## 🎉 Reconciliation Complete! ⚡ ULTRA FAST
@@ -610,6 +661,7 @@ class CorporateWorkflow:
         - 💳 Batch 4 (FC + Commission): {len(batch4_df):,} transactions
         - 📊 Batch 5 (Rate Differences): {len(batch5_df):,} transactions
         - ❌ Batch 6 (Unmatched): {len(batch6_df):,} transactions
+        {blank_warning}
 
         **✅ Data Integrity:**
         - Input Rows: {len(df):,} | Output Rows: {total_output_rows:,}
