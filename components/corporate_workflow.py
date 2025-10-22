@@ -281,10 +281,13 @@ class CorporateWorkflow:
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # CRITICAL FIX: Do NOT match if reference is blank/empty!
-            if len(group) < 2 or ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or str(ref).strip() == '':
+            # CRITICAL FIX: Do NOT match if reference is blank/empty OR has blank marker!
+            if (len(group) < 2 or
+                ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or
+                str(ref).strip() == '' or
+                str(ref).startswith('__BLANK_')):  # Skip blank markers
                 continue
-            
+
             # Separate into debit and credit transactions
             debit_txns = group[group['_debit'] > 0].copy()
             credit_txns = group[group['_credit'] > 0].copy()
@@ -338,10 +341,13 @@ class CorporateWorkflow:
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # CRITICAL FIX: Do NOT match if reference is blank/empty!
-            if len(group) < 2 or ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or str(ref).strip() == '':
+            # CRITICAL FIX: Do NOT match if reference is blank/empty OR has blank marker!
+            if (len(group) < 2 or
+                ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or
+                str(ref).strip() == '' or
+                str(ref).startswith('__BLANK_')):  # Skip blank markers
                 continue
-            
+
             # Separate debit and credit transactions
             debit_txns = group[group['_debit'] > 0].copy()
             credit_txns = group[group['_credit'] > 0].copy()
@@ -390,10 +396,13 @@ class CorporateWorkflow:
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # CRITICAL FIX: Do NOT match if reference is blank/empty!
-            if len(group) < 2 or ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or str(ref).strip() == '':
+            # CRITICAL FIX: Do NOT match if reference is blank/empty OR has blank marker!
+            if (len(group) < 2 or
+                ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or
+                str(ref).strip() == '' or
+                str(ref).startswith('__BLANK_')):  # Skip blank markers
                 continue
-            
+
             # Separate debit and credit transactions
             debit_txns = group[group['_debit'] > 0].copy()
             credit_txns = group[group['_credit'] > 0].copy()
@@ -442,10 +451,13 @@ class CorporateWorkflow:
         grouped = unmatched_df.groupby('_reference')
 
         for ref, group in grouped:
-            # CRITICAL FIX: Do NOT match if reference is blank/empty!
-            if len(group) < 2 or ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or str(ref).strip() == '':
+            # CRITICAL FIX: Do NOT match if reference is blank/empty OR has blank marker!
+            if (len(group) < 2 or
+                ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or
+                str(ref).strip() == '' or
+                str(ref).startswith('__BLANK_')):  # Skip blank markers
                 continue
-            
+
             # Separate debit and credit transactions
             debit_txns = group[group['_debit'] > 0].copy()
             credit_txns = group[group['_credit'] > 0].copy()
