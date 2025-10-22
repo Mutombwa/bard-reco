@@ -204,9 +204,20 @@ class CorporateWorkflow:
         # Step 1: Clean and prepare data (vectorized - ULTRA FAST)
         status_placeholder.info("⚙️ **Step 1/7:** Preparing and cleaning data...")
         df = df.copy()
+
+        # Store original row count for validation
+        original_row_count = len(df)
+
+        # Vectorized data cleaning - FAST
         df['_debit'] = pd.to_numeric(df[debit_col], errors='coerce').fillna(0).abs()
         df['_credit'] = pd.to_numeric(df[credit_col], errors='coerce').fillna(0).abs()
+
+        # Clean references - replace blanks with a unique marker to prevent matching
         df['_reference'] = df[ref_col].astype(str).str.strip().str.upper()
+        # Replace empty/null references with unique values to prevent blank matching
+        blank_mask = df['_reference'].isin(['', 'NAN', 'NONE', 'NULL', '0'])
+        df.loc[blank_mask, '_reference'] = ['__BLANK_' + str(i) + '__' for i in range(blank_mask.sum())]
+
         df['_journal'] = df[journal_col].astype(str).str.strip()
         df['_net_diff'] = df['_debit'] - df['_credit']  # Debit - Credit
         df['_abs_diff'] = np.abs(df['_net_diff'])
@@ -263,14 +274,15 @@ class CorporateWorkflow:
         # BATCH 2: Exact Match (Same Reference + Amounts match exactly) - OPTIMIZED
         status_placeholder.info("✅ **Step 3/7:** Processing Batch 2 - Exact Match Transactions...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
-        
+
         batch2_rows = []  # Store paired rows to maintain order
-        
+
         # Group by reference for faster processing
         grouped = unmatched_df.groupby('_reference')
-        
+
         for ref, group in grouped:
-            if len(group) < 2 or ref in ['', 'NAN', 'NONE']:
+            # CRITICAL FIX: Do NOT match if reference is blank/empty!
+            if len(group) < 2 or ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or str(ref).strip() == '':
                 continue
             
             # Separate into debit and credit transactions
@@ -318,38 +330,16 @@ class CorporateWorkflow:
         progress_bar.progress(50)
         metrics_placeholder.success(f"✅ Batch 2 complete: {len(batch2_indices):,} exact match transactions")
 
-        # BATCH 3: Foreign Debit Include Commission (Debit > Credit, diff significant)
-        status_placeholder.info("� **Step 4/7:** Processing Batch 3 - Foreign Debit Include Commission...")
-        unmatched_df = df[~df.index.isin(matched_indices)].copy()
-        
-        for ref, group in unmatched_df.groupby('_reference'):
-            if len(group) >= 2 and ref not in ['', 'NAN', 'NONE']:
-                for i in range(len(group)):
-                    for j in range(i + 1, len(group)):
-                        row1, row2 = group.iloc[i], group.iloc[j]
-                        
-                        # Check if one has debit and other has credit
-                        if row1['_debit'] > 0 and row2['_credit'] > 0:
-                            diff = abs(row1['_debit'] - row2['_credit'])
-                            # Debit is higher (includes commission)
-                            if 1 <= diff <= 1000 and row1['_debit'] > row2['_credit']:
-                                batch3_indices.add(row1.name)
-                                batch3_indices.add(row2.name)
-                                matched_indices.add(row1.name)
-                                matched_indices.add(row2.name)
-        
-        progress_bar.progress(65)
-        metrics_placeholder.success(f"✅ Batch 2 complete: {len(batch2_indices):,} exact match transactions")
-
         # BATCH 3: Foreign Debit Include Commission (Debit > Credit, diff >= 1) - OPTIMIZED
         status_placeholder.info("📊 **Step 4/7:** Processing Batch 3 - Foreign Debit Include Commission...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
         batch3_rows = []
-        
+
         grouped = unmatched_df.groupby('_reference')
-        
+
         for ref, group in grouped:
-            if len(group) < 2 or ref in ['', 'NAN', 'NONE']:
+            # CRITICAL FIX: Do NOT match if reference is blank/empty!
+            if len(group) < 2 or ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or str(ref).strip() == '':
                 continue
             
             # Separate debit and credit transactions
@@ -396,11 +386,12 @@ class CorporateWorkflow:
         status_placeholder.info("📊 **Step 5/7:** Processing Batch 4 - Foreign Credits Include Commission...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
         batch4_rows = []
-        
+
         grouped = unmatched_df.groupby('_reference')
-        
+
         for ref, group in grouped:
-            if len(group) < 2 or ref in ['', 'NAN', 'NONE']:
+            # CRITICAL FIX: Do NOT match if reference is blank/empty!
+            if len(group) < 2 or ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or str(ref).strip() == '':
                 continue
             
             # Separate debit and credit transactions
@@ -447,11 +438,12 @@ class CorporateWorkflow:
         status_placeholder.info("📊 **Step 6/7:** Processing Batch 5 - Common References & Rate Differences...")
         unmatched_df = df[~df.index.isin(matched_indices)].copy()
         batch5_rows = []
-        
+
         grouped = unmatched_df.groupby('_reference')
-        
+
         for ref, group in grouped:
-            if len(group) < 2 or ref in ['', 'NAN', 'NONE']:
+            # CRITICAL FIX: Do NOT match if reference is blank/empty!
+            if len(group) < 2 or ref in ['', 'NAN', 'NONE', 'nan', '0', 'NULL'] or str(ref).strip() == '':
                 continue
             
             # Separate debit and credit transactions
@@ -510,7 +502,26 @@ class CorporateWorkflow:
         
         # Calculate processing time
         elapsed_time = time.time() - start_time
-        
+
+        # CRITICAL VALIDATION: Ensure no duplications or data loss
+        total_output_rows = len(batch1_df) + len(batch2_df) + len(batch3_df) + len(batch4_df) + len(batch5_df) + len(batch6_df)
+
+        # Calculate sums for validation
+        original_debit_sum = df['_debit'].sum()
+        original_credit_sum = df['_credit'].sum()
+
+        output_debit_sum = 0
+        output_credit_sum = 0
+
+        for batch_df in [batch1_df, batch2_df, batch3_df, batch4_df, batch5_df, batch6_df]:
+            if not batch_df.empty and '_debit' in batch_df.columns:
+                output_debit_sum += batch_df['_debit'].sum()
+                output_credit_sum += batch_df['_credit'].sum()
+
+        # Validation checks
+        has_duplicates = total_output_rows != len(df)
+        sum_mismatch = abs(original_debit_sum - output_debit_sum) > 0.01 or abs(original_credit_sum - output_credit_sum) > 0.01
+
         results = {
             'batch1': batch1_df,
             'batch2': batch2_df,
@@ -526,7 +537,16 @@ class CorporateWorkflow:
                 'batch4': len(batch4_df),
                 'batch5': len(batch5_df),
                 'batch6': len(batch6_df),
-                'processing_time': elapsed_time
+                'processing_time': elapsed_time,
+                # Validation metrics
+                'original_rows': len(df),
+                'output_rows': total_output_rows,
+                'original_debit_sum': original_debit_sum,
+                'original_credit_sum': original_credit_sum,
+                'output_debit_sum': output_debit_sum,
+                'output_credit_sum': output_credit_sum,
+                'has_duplicates': has_duplicates,
+                'sum_mismatch': sum_mismatch
             }
         }
 
@@ -544,16 +564,33 @@ class CorporateWorkflow:
         matched_count = len(matched_indices)
         match_rate = (matched_count / len(df) * 100) if len(df) > 0 else 0
         
+        # Show completion message with validation warnings if needed
+        validation_msg = ""
+        if has_duplicates:
+            validation_msg += f"\n⚠️ **WARNING**: Row count mismatch! Input: {len(df):,} | Output: {total_output_rows:,}"
+        if sum_mismatch:
+            validation_msg += f"\n⚠️ **WARNING**: Sum mismatch detected!"
+            validation_msg += f"\n   - Input FD: {original_debit_sum:,.2f} | Output FD: {output_debit_sum:,.2f}"
+            validation_msg += f"\n   - Input FC: {original_credit_sum:,.2f} | Output FC: {output_credit_sum:,.2f}"
+
+        if validation_msg:
+            st.error(f"""
+            ## ⚠️ Reconciliation Complete with Warnings!
+            {validation_msg}
+
+            Please review the results carefully!
+            """)
+
         st.success(f"""
         ## 🎉 Reconciliation Complete! ⚡ ULTRA FAST
-        
+
         **⚡ Performance Metrics:**
         - 🚀 **Lightning Speed**: {rows_per_sec:,.0f} rows/second
         - ⏱️ **Total Time**: {elapsed_time:.2f} seconds
         - 📊 **Processed**: {len(df):,} total transactions
         - ✅ **Matched**: {matched_count:,} transactions ({match_rate:.1f}%)
         - ❌ **Unmatched**: {len(batch6_indices):,} transactions ({100-match_rate:.1f}%)
-        
+
         **Batch Summary:**
         - 📋 Batch 1 (Correcting Journals): {len(batch1_df):,} transactions
         - ✅ Batch 2 (Exact Match): {len(batch2_df):,} transactions
@@ -561,7 +598,12 @@ class CorporateWorkflow:
         - 💳 Batch 4 (FC + Commission): {len(batch4_df):,} transactions
         - 📊 Batch 5 (Rate Differences): {len(batch5_df):,} transactions
         - ❌ Batch 6 (Unmatched): {len(batch6_df):,} transactions
-        
+
+        **✅ Data Integrity:**
+        - Input Rows: {len(df):,} | Output Rows: {total_output_rows:,}
+        - Input FD Sum: {original_debit_sum:,.2f} | Output FD Sum: {output_debit_sum:,.2f}
+        - Input FC Sum: {original_credit_sum:,.2f} | Output FC Sum: {output_credit_sum:,.2f}
+
         🎯 **Results are ready for viewing and export below!**
         """)
         
