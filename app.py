@@ -15,12 +15,19 @@ import json
 # Add project directories to path
 sys.path.append(str(Path(__file__).parent))
 
-from auth.authentication import Authentication
-from components.data_editor import DataEditor
-from components.dashboard import Dashboard
-from src.reconciliation_engine import ReconciliationEngine
+# Import only lightweight, essential modules at startup
+# Use persistent authentication for Streamlit Cloud deployment
+try:
+    from auth.persistent_auth import PersistentAuthentication as Authentication
+except ImportError:
+    # Fallback to regular auth if persistent auth not available
+    from auth.authentication import Authentication
+
 from utils.session_state import SessionState
 from config.app_config import APP_CONFIG
+
+# Heavy imports will be done lazily when needed
+# This dramatically improves initial load time
 
 # Page configuration
 st.set_page_config(
@@ -216,11 +223,11 @@ def show_login_page():
             st.markdown("### 📝 Create New Account")
 
             with st.form("register_form"):
-                st.info("🔒 **Note:** Only @bardsantner.com email addresses can register")
+                st.info("🔒 **Note:** Please use your official company email address")
                 new_username = st.text_input("Choose Username", placeholder="Choose a username")
                 new_password = st.text_input("Choose Password", type="password", placeholder="Choose a strong password")
                 confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm your password")
-                email = st.text_input("Email (Required)", placeholder="your.name@bardsantner.com")
+                email = st.text_input("Company Email (Required)", placeholder="your.email@company.com")
 
                 col_a, col_b = st.columns(2)
                 with col_a:
@@ -318,8 +325,12 @@ def show_main_app():
             st.session_state.session.logout()
             st.rerun()
 
-    # Main content area
+    # Load persistent data after authentication (lazy loading)
+    load_persistent_data()
+    
+    # Main content area with lazy imports
     if page == "🏠 Dashboard":
+        from components.dashboard import Dashboard
         Dashboard().render()
     elif page == "🔄 Workflows":
         show_workflows_page()
@@ -366,6 +377,9 @@ def show_workflows_page():
 
 def show_reconciliation_page():
     """Reconciliation workflow page"""
+    
+    # Lazy import heavy modules only when this page is accessed
+    from utils.file_loader import load_uploaded_file, get_dataframe_info
 
     st.markdown("""
     <div class="gradient-header">
@@ -387,13 +401,23 @@ def show_reconciliation_page():
         )
 
         if ledger_file:
-            st.success(f"✅ Loaded: {ledger_file.name}")
-            ledger_df = pd.read_excel(ledger_file) if ledger_file.name.endswith(('.xlsx', '.xls')) else pd.read_csv(ledger_file)
-            st.session_state.ledger_df = ledger_df
+            # Use optimized loader with caching and progress indicator
+            ledger_df, is_new = load_uploaded_file(
+                ledger_file,
+                session_key='ledger_df',
+                hash_key='ledger_file_hash',
+                show_progress=True
+            )
 
-            with st.expander("👁️ Preview Data"):
+            if is_new:
+                st.success(f"✅ Loaded: {ledger_file.name}")
+            else:
+                st.info(f"📋 Using cached: {ledger_file.name}")
+
+            # Show preview (collapsed by default to reduce initial load)
+            with st.expander("👁️ Preview Data", expanded=False):
                 st.dataframe(ledger_df.head(10), use_container_width=True)
-                st.info(f"📊 {len(ledger_df)} rows × {len(ledger_df.columns)} columns")
+                st.info(f"📊 {get_dataframe_info(ledger_df)}")
 
     with col2:
         st.markdown("### 📥 Upload Bank Statement")
@@ -405,13 +429,23 @@ def show_reconciliation_page():
         )
 
         if statement_file:
-            st.success(f"✅ Loaded: {statement_file.name}")
-            statement_df = pd.read_excel(statement_file) if statement_file.name.endswith(('.xlsx', '.xls')) else pd.read_csv(statement_file)
-            st.session_state.statement_df = statement_df
+            # Use optimized loader with caching and progress indicator
+            statement_df, is_new = load_uploaded_file(
+                statement_file,
+                session_key='statement_df',
+                hash_key='statement_file_hash',
+                show_progress=True
+            )
 
-            with st.expander("👁️ Preview Data"):
+            if is_new:
+                st.success(f"✅ Loaded: {statement_file.name}")
+            else:
+                st.info(f"📋 Using cached: {statement_file.name}")
+
+            # Show preview (collapsed by default to reduce initial load)
+            with st.expander("👁️ Preview Data", expanded=False):
                 st.dataframe(statement_df.head(10), use_container_width=True)
-                st.info(f"📊 {len(statement_df)} rows × {len(statement_df.columns)} columns")
+                st.info(f"📊 {get_dataframe_info(statement_df)}")
 
     # Data editing option
     if 'ledger_df' in st.session_state or 'statement_df' in st.session_state:
@@ -436,7 +470,7 @@ def show_reconciliation_page():
                 st.session_state.ledger_df = edited_df
                 st.session_state.editing_ledger = False
                 st.success("✅ Ledger data updated!")
-                st.rerun()
+                # Removed st.rerun() - Streamlit reruns automatically when session state changes
 
         if st.session_state.get('editing_statement', False):
             st.markdown("#### 📝 Statement Data Editor")
@@ -446,7 +480,7 @@ def show_reconciliation_page():
                 st.session_state.statement_df = edited_df
                 st.session_state.editing_statement = False
                 st.success("✅ Statement data updated!")
-                st.rerun()
+                # Removed st.rerun() - Streamlit reruns automatically when session state changes
 
     # Configuration and reconciliation
     if 'ledger_df' in st.session_state and 'statement_df' in st.session_state:
@@ -503,6 +537,9 @@ def run_reconciliation(ledger_df, statement_df, ledger_amount, statement_amount,
                        ledger_date, statement_date, ledger_ref, statement_ref,
                        fuzzy_threshold, date_tolerance, amount_tolerance, enable_ai):
     """Execute reconciliation process"""
+    
+    # Lazy import only when actually running reconciliation
+    from src.reconciliation_engine import ReconciliationEngine
 
     with st.spinner("🔄 Processing reconciliation..."):
         # Create reconciliation engine
@@ -614,6 +651,9 @@ def show_reconciliation_results(results):
 
 def show_data_management_page():
     """Data management and history"""
+    
+    # Lazy import data editor only when needed
+    from components.data_editor import DataEditor
 
     st.markdown("""
     <div class="gradient-header">
@@ -814,25 +854,33 @@ def show_settings_page():
         if st.button("📧 Save Notification Settings"):
             st.success("✅ Notification preferences saved!")
 
-# Initialize persistent data on app start
+# Initialize persistent data ONLY after authentication
 def load_persistent_data():
-    """Load persisted reconciliation data from database on app startup"""
+    """Load persisted reconciliation data from database after user is authenticated"""
+    # Only load once per session using a flag
+    if 'db_data_loaded' in st.session_state:
+        return  # Already loaded in this session
+    
+    # Only load if user is authenticated
+    if not st.session_state.session.is_authenticated:
+        return  # Don't load data for unauthenticated users
+
     try:
         import sys
         import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'utils'))
         from database import get_db  # type: ignore
-        
+
         # Only load if not already in session state
         if 'fnb_results' not in st.session_state or st.session_state.fnb_results is None:
             db = get_db()
-            
+
             # Get the most recent FNB result
             recent_results = db.list_results('FNB', limit=1)
             if recent_results:
                 result_id = recent_results[0][0]
                 result_data = db.get_result(result_id)
-                
+
                 if result_data:
                     # Restore to session state
                     st.session_state.fnb_results = result_data
@@ -840,9 +888,9 @@ def load_persistent_data():
     except Exception as e:
         # Silently fail if database not available
         pass
-
-# Load persistent data before running main
-load_persistent_data()
+    finally:
+        # Mark as loaded to prevent future calls
+        st.session_state.db_data_loaded = True
 
 # Run the app
 if __name__ == "__main__":

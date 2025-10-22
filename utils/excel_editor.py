@@ -116,16 +116,27 @@ class ExcelEditor:
                     st.rerun()
                 st.markdown("---")
         
-        # Bulk Paste from Excel with Preview
-        with st.expander("📋 Bulk Paste from Excel", expanded=False):
-            st.markdown("**Paste multiple rows from Excel:**")
-            st.caption("1. Copy rows from Excel (Ctrl+C)\n2. Paste in the box below (Ctrl+V)\n3. Preview and validate\n4. Click 'Paste Data'")
+        # Bulk Paste from Excel with Preview - PROMINENT POSITION
+        st.markdown("---")
+        st.markdown("### 📋 Quick Paste from Excel")
+
+        with st.container():
+            st.info("💡 **Best Practice:** Use this paste area instead of pasting directly into cells below!")
+
+            col_help1, col_help2 = st.columns(2)
+            with col_help1:
+                st.markdown("**✅ Recommended Method:**")
+                st.markdown("1. Select rows in Excel\n2. Copy with Ctrl+C\n3. Click in box below\n4. Paste with Ctrl+V\n5. Click 'Paste Data'")
+            with col_help2:
+                st.markdown("**❌ Avoid:**")
+                st.markdown("- Pasting directly into cells\n- Requires multiple attempts\n- Data may not paste correctly")
 
             paste_data = st.text_area(
-                "Paste Excel data here (tab-separated)",
-                height=150,
+                "👇 Click here and paste your Excel data (Ctrl+V)",
+                height=200,
                 key=f"{self.key_prefix}_paste_area",
-                placeholder="Copy from Excel and paste here..."
+                placeholder="1. Click here\n2. Press Ctrl+V to paste your Excel data\n3. Preview will show below\n4. Click 'Paste Data' button",
+                help="Copy data from Excel with Ctrl+C, then click here and press Ctrl+V"
             )
 
             # Show preview if data is pasted
@@ -136,7 +147,7 @@ class ExcelEditor:
                     st.dataframe(preview_df.head(5), use_container_width=True)
                     st.caption(f"📊 Ready to paste: {len(preview_df)} rows × {len(preview_df.columns)} columns")
 
-            col_p1, col_p2 = st.columns(2)
+            col_p1, col_p2, col_p3 = st.columns(3)
             with col_p1:
                 paste_position = st.selectbox(
                     "Paste at",
@@ -145,14 +156,19 @@ class ExcelEditor:
                 )
 
             with col_p2:
-                if st.button("📋 Paste Data", key=f"{self.key_prefix}_do_paste", use_container_width=True):
+                if st.button("✅ Paste Data", key=f"{self.key_prefix}_do_paste", use_container_width=True, type="primary"):
                     if paste_data and paste_data.strip():
                         success = self._bulk_paste(paste_data, paste_position)
                         if success:
                             st.success("✅ Data pasted successfully!")
+                            st.balloons()
                             st.rerun()
                     else:
                         st.warning("⚠️ Please paste data in the text area first")
+
+            with col_p3:
+                if st.button("🔄 Clear", key=f"{self.key_prefix}_clear_paste", use_container_width=True):
+                    st.rerun()
         
         # Column management
         with st.expander("🗂️ Column Management", expanded=False):
@@ -187,37 +203,9 @@ class ExcelEditor:
                 self._filter_data_tool()
         
         # Main data editor
-        st.markdown("### 📝 Edit Data")
-        
-        # Add keyboard shortcut handlers
-        st.markdown(f"""
-        <script>
-        document.addEventListener('keydown', function(e) {{
-            // Don't trigger if user is typing in an input field
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {{
-                return;
-            }}
-            
-            // Handle keyboard shortcuts
-            if (e.key === 'a' || e.key === 'A') {{
-                e.preventDefault();
-                // Trigger Add Row button
-                const addBtn = document.querySelector('[data-testid="stButton"] button:has-text("Add Row")');
-                if (addBtn) addBtn.click();
-            }} else if (e.key === 's' || e.key === 'S') {{
-                e.preventDefault();
-                // Trigger Save button
-                const saveBtn = document.querySelector('[data-testid="stButton"] button:has-text("Save")');
-                if (saveBtn) saveBtn.click();
-            }} else if (e.key === 'r' || e.key === 'R') {{
-                e.preventDefault();
-                // Trigger Reset button
-                const resetBtn = document.querySelector('[data-testid="stButton"] button:has-text("Reset")');
-                if (resetBtn) resetBtn.click();
-            }}
-        }});
-        </script>
-        """, unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("### 📝 Edit Data (Cell Editing)")
+        st.caption("⚠️ For bulk paste, use the paste area above. Cell-by-cell editing available below.")
         
         # Create proper column configuration based on ACTUAL dtypes (not column names)
         column_config = {}
@@ -254,14 +242,17 @@ class ExcelEditor:
                 )
         
         # Make data editor with proper column configuration and row selection
+        # IMPORTANT: Set num_rows="fixed" to prevent paste confusion
+        # Users should use the paste area above for bulk operations
         edited_df = st.data_editor(
             edited_data,
             use_container_width=True,
-            num_rows="dynamic",  # Allow adding/deleting rows directly in the editor
+            num_rows="fixed",  # Fixed rows - use paste area or add/insert buttons for new rows
             key=f"{self.key_prefix}_data_grid",
             height=400,
             column_config=column_config,
-            hide_index=False  # Show row numbers for easier selection
+            hide_index=False,  # Show row numbers for easier selection
+            disabled=False  # Allow cell editing
         )
         
         # Update session state with edited data
@@ -339,8 +330,20 @@ class ExcelEditor:
                 st.error("❌ No data found in paste area!")
                 return False
 
-            # Split each line by tabs
-            rows = [line.split('\t') for line in lines]
+            # Split each line by tabs (Excel default) or commas (CSV fallback)
+            rows = []
+            for line in lines:
+                if '\t' in line:
+                    rows.append(line.split('\t'))
+                elif ',' in line:
+                    # Handle CSV with quoted values
+                    import csv
+                    import io
+                    reader = csv.reader(io.StringIO(line))
+                    rows.append(next(reader))
+                else:
+                    # Single column
+                    rows.append([line])
 
             # Validate column count
             max_cols = max(len(row) for row in rows)
@@ -348,6 +351,7 @@ class ExcelEditor:
             if max_cols > len(edited_data.columns):
                 st.error(f"❌ Too many columns! Pasted data has {max_cols} columns, but table has {len(edited_data.columns)} columns.")
                 st.info(f"Table columns: {', '.join(edited_data.columns)}")
+                st.info("💡 Tip: Make sure you're copying only the data columns (not row numbers or extra columns)")
                 return False
 
             # Pad shorter rows with empty strings - pad to match the FULL table columns
@@ -379,17 +383,28 @@ class ExcelEditor:
                     # Store original values before conversion attempts
                     original_values = pasted_df[col].copy()
 
+                    # Skip if all values are empty
+                    if original_values.astype(str).str.strip().eq('').all():
+                        pasted_df[col] = ''
+                        continue
+
                     # Try multiple common date formats from Excel
                     date_formats = [
                         '%Y-%m-%d %H:%M:%S',  # Standard format
-                        '%m/%d/%Y %H:%M:%S',  # US format with time
-                        '%d/%m/%Y %H:%M:%S',  # EU format with time
                         '%Y-%m-%d',           # ISO date only
                         '%m/%d/%Y',           # US date only
                         '%d/%m/%Y',           # EU date only
+                        '%m/%d/%Y %H:%M:%S',  # US format with time
+                        '%d/%m/%Y %H:%M:%S',  # EU format with time
+                        '%Y/%m/%d',           # Alternative ISO
                         '%Y/%m/%d %H:%M:%S',  # Alternative ISO with time
+                        '%d-%m-%Y',           # Alternative EU
+                        '%m-%d-%Y',           # Alternative US
                         '%d-%m-%Y %H:%M:%S',  # Alternative EU with time
-                        '%m-%d-%Y %H:%M:%S'   # Alternative US with time
+                        '%m-%d-%Y %H:%M:%S',  # Alternative US with time
+                        '%Y%m%d',             # Compact format
+                        '%d.%m.%Y',           # European dot format
+                        '%d.%m.%Y %H:%M:%S'   # European dot format with time
                     ]
 
                     # Try formats in order
@@ -400,52 +415,74 @@ class ExcelEditor:
                     for fmt in date_formats:
                         try:
                             temp_conversion = pd.to_datetime(original_values, format=fmt, errors='coerce')
-                            success_rate = temp_conversion.notna().sum() / len(temp_conversion)
+                            success_rate = temp_conversion.notna().sum() / len(temp_conversion) if len(temp_conversion) > 0 else 0
 
                             # Keep the conversion with the highest success rate
                             if success_rate > best_success_rate:
                                 best_conversion = temp_conversion
                                 best_success_rate = success_rate
 
-                            # If we got >80% success, use this format
-                            if success_rate > 0.8:
+                            # If we got >70% success, use this format
+                            if success_rate > 0.7:
                                 pasted_df[col] = temp_conversion
                                 converted = True
                                 break
                         except:
                             continue
 
-                    # If none worked well, try pandas' automatic inference
-                    if not converted and best_success_rate > 0:
+                    # If none worked well but we have some success, use best conversion
+                    if not converted and best_success_rate > 0.3:
                         pasted_df[col] = best_conversion
                         converted = True
                     elif not converted:
-                        pasted_df[col] = pd.to_datetime(original_values, errors='coerce', infer_datetime_format=True)
+                        # Last resort: pandas' automatic inference
+                        try:
+                            pasted_df[col] = pd.to_datetime(original_values, errors='coerce', infer_datetime_format=True)
+                        except:
+                            # If all else fails, keep as string
+                            pasted_df[col] = original_values
 
                     # Report if dates failed to parse
-                    failed_count = pasted_df[col].isna().sum()
-                    if failed_count > 0:
-                        conversion_errors.append(f"⚠️ {failed_count} date(s) in '{col}' could not be parsed")
+                    failed_count = pasted_df[col].isna().sum() if hasattr(pasted_df[col], 'isna') else 0
+                    if failed_count > 0 and failed_count < len(pasted_df):
+                        conversion_errors.append(f"⚠️ {failed_count}/{len(pasted_df)} date(s) in '{col}' could not be parsed")
 
                 # Handle numeric columns (int and float)
                 elif 'float' in original_dtype or 'int' in original_dtype:
-                    # Remove common formatting (commas, currency symbols)
-                    cleaned_values = pasted_df[col].astype(str).str.replace(',', '', regex=False)
-                    cleaned_values = cleaned_values.str.replace('$', '', regex=False)
-                    cleaned_values = cleaned_values.str.replace('€', '', regex=False)
-                    cleaned_values = cleaned_values.str.replace('£', '', regex=False)
-                    cleaned_values = cleaned_values.str.strip()
+                    # Store original values
+                    original_values = pasted_df[col].copy()
+
+                    # Remove common formatting (commas, currency symbols, spaces, parentheses)
+                    cleaned_values = pasted_df[col].astype(str).str.strip()
+
+                    # Handle parentheses as negative (accounting format)
+                    is_negative = cleaned_values.str.contains(r'^\(.*\)$', regex=True, na=False)
+
+                    # Remove formatting characters
+                    cleaned_values = cleaned_values.str.replace(r'[\$€£R,\s]', '', regex=True)
+                    cleaned_values = cleaned_values.str.replace(r'[()]', '', regex=True)
+
+                    # Handle empty strings
+                    cleaned_values = cleaned_values.replace('', '0')
+                    cleaned_values = cleaned_values.replace('nan', '0')
 
                     # Convert to numeric
-                    pasted_df[col] = pd.to_numeric(cleaned_values, errors='coerce')
+                    numeric_values = pd.to_numeric(cleaned_values, errors='coerce')
+
+                    # Apply negative sign for parentheses
+                    numeric_values = numeric_values.where(~is_negative, -numeric_values)
 
                     # Maintain integer type if original was integer
                     if 'int' in original_dtype:
-                        pasted_df[col] = pasted_df[col].fillna(0).astype('int64')
+                        pasted_df[col] = numeric_values.fillna(0).astype('int64')
+                    else:
+                        pasted_df[col] = numeric_values
 
-                    # Report conversion issues
-                    failed_count = pasted_df[col].isna().sum()
-                    if failed_count > 0 and 'float' in original_dtype:
+                    # Report conversion issues (excluding intentional empty/zero values)
+                    non_empty_original = original_values.astype(str).str.strip()
+                    non_empty_original = non_empty_original[~non_empty_original.isin(['', 'nan', 'None', '0'])]
+                    failed_count = numeric_values[non_empty_original.index].isna().sum()
+                    if failed_count > 0:
                         conversion_errors.append(f"⚠️ {failed_count} value(s) in '{col}' could not be converted to number")
 
                 # Handle text columns - preserve as-is but convert to string

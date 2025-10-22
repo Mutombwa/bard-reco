@@ -17,18 +17,20 @@ class Dashboard:
     """Professional interactive dashboard with real-time analytics"""
 
     def __init__(self):
-        self.load_data()
+        # Don't auto-load data in __init__ - do it lazily when needed
         self.initialize_history()
 
     def load_data(self):
-        """Load dashboard data from session state and database"""
+        """Load dashboard data from session state and database (called only when rendering)"""
         # Check for results from different workflows in session state
         self.fnb_results = st.session_state.get('fnb_results')
         self.bidvest_results = st.session_state.get('bidvest_results')
         self.corporate_results = st.session_state.get('corporate_results')
         
-        # Also try to load from database
-        self.load_from_database()
+        # Also try to load from database - but only if not already loaded
+        if not hasattr(self, '_db_loaded'):
+            self.load_from_database()
+            self._db_loaded = True
 
     def initialize_history(self):
         """Initialize reconciliation history tracking"""
@@ -46,7 +48,7 @@ class Dashboard:
             db = get_db()
             
             # Get the most recent FNB result if not in session state
-            if not self.fnb_results:
+            if not hasattr(self, 'fnb_results') or not self.fnb_results:
                 recent_results = db.list_results('FNB', limit=1)
                 if recent_results:
                     result_id = recent_results[0][0]
@@ -78,6 +80,9 @@ class Dashboard:
 
     def render(self):
         """Render professional dashboard with transaction category navigation"""
+        
+        # Load data lazily only when rendering
+        self.load_data()
 
         # Header
         st.markdown("""

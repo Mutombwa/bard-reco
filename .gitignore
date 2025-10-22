@@ -26,11 +26,17 @@ wheels/
 # Streamlit
 .streamlit/secrets.toml
 
-# Data files
-data/
+# Data files (but keep the database!)
+data/uploads/
+data/exports/
+data/reports/
 *.csv
 *.xlsx
 *.xls
+
+# Keep user database for persistence
+!data/users.db
+!data/.gitkeep
 
 # IDE
 .vscode/
