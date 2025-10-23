@@ -28,26 +28,17 @@ class HybridAuthentication:
             if supabase_auth.enabled:
                 self.backend = supabase_auth
                 self.backend_type = "supabase"
-                st.success("✅ Using Supabase cloud database - Users persist permanently!")
+                # Don't show message here - will be shown in sidebar by app.py
                 return
-        except Exception as e:
-            st.warning(f"Supabase not available: {e}")
+        except Exception:
+            pass  # Silent fallback to local
         
         # Fall back to local file storage
         try:
             from auth.authentication import Authentication
             self.backend = Authentication()
             self.backend_type = "local"
-            st.warning("""
-            ⚠️ **Using local file storage**
-            
-            User data is stored in `data/users.json` and will be lost when the app restarts.
-            
-            **To enable permanent storage:**
-            1. Create a free Supabase account at https://supabase.com
-            2. Follow setup instructions in `auth/supabase_auth.py`
-            3. Add credentials to `.streamlit/secrets.toml`
-            """)
+            # Don't show message here - will be shown in sidebar by app.py
         except Exception as e:
             st.error(f"❌ Could not initialize authentication: {e}")
             raise
@@ -90,8 +81,15 @@ class HybridAuthentication:
 
     def get_backend_info(self) -> Dict[str, str]:
         """Get information about active backend"""
-        return {
-            'type': self.backend_type,
-            'description': 'Cloud database (permanent)' if self.backend_type == 'supabase' else 'Local file (temporary)',
-            'persistent': self.backend_type == 'supabase'
-        }
+        if self.backend_type == 'supabase':
+            return {
+                'backend': 'supabase',
+                'message': 'Using Supabase cloud database (permanent storage)',
+                'persistent': True
+            }
+        else:
+            return {
+                'backend': 'local',
+                'message': 'Using local file storage (temporary - will be lost on restart)',
+                'persistent': False
+            }

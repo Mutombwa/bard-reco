@@ -56,18 +56,18 @@ class SupabaseAuthentication:
                 self.supabase: Client = create_client(url, key)
                 self.enabled = True
                 
-                # Create default admin if not exists
+                # Create default admin if not exists (silently)
                 self._create_default_admin()
             else:
                 self.enabled = False
-                st.warning("⚠️ Supabase not configured. Using local file storage (data may be lost on app restart).")
+                # Don't show warning here - handled by hybrid_auth
                 
         except ImportError:
             self.enabled = False
-            st.error("❌ Supabase package not installed. Run: pip install supabase")
-        except Exception as e:
+            # Don't show error here - handled by hybrid_auth
+        except Exception:
             self.enabled = False
-            st.error(f"❌ Supabase connection failed: {e}")
+            # Don't show error here - handled by hybrid_auth
 
     def _hash_password(self, password: str) -> str:
         """Hash password using SHA-256"""
@@ -94,8 +94,8 @@ class SupabaseAuthentication:
                     'role': 'admin'
                 }).execute()
                 
-        except Exception as e:
-            st.warning(f"Could not create default admin: {e}")
+        except Exception:
+            pass  # Silently fail - admin may already exist or table not ready
 
     def register(self, username: str, password: str, email: str = '') -> Tuple[bool, str]:
         """
