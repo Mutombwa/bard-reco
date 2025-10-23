@@ -1,0 +1,13 @@
+# Add this to your requirements.txt for database persistence
+# This will ensure user data persists even when app sleeps
+
+# Option 1: SQLite (simple, free, good for small teams)
+# No additional packages needed - built into Python
+
+# Option 2: PostgreSQL (recommended for production)
+psycopg2-binary>=2.9.9
+
+# Option 3: Supabase (free tier, cloud database)
+supabase>=2.0.0
+
+# Uncomment the option you choose and add to requirements.txt
