@@ -25,5 +25,8 @@ plotly>=5.0.0
 # Date/Time Utilities
 python-dateutil>=2.8.0
 
+# Database & Authentication (Supabase for persistent user storage)
+supabase>=2.0.0
+
 # Standard Library Extensions (included with Python, but explicit for clarity)
 # json, hashlib, pathlib, datetime, typing, collections, re, threading, concurrent.futures

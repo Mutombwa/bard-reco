@@ -16,12 +16,8 @@ import json
 sys.path.append(str(Path(__file__).parent))
 
 # Import only lightweight, essential modules at startup
-# Use persistent authentication for Streamlit Cloud deployment
-try:
-    from auth.persistent_auth import PersistentAuthentication as Authentication
-except ImportError:
-    # Fallback to regular auth if persistent auth not available
-    from auth.authentication import Authentication
+# Use hybrid authentication: Supabase cloud (permanent) with local file fallback (temporary)
+from auth.hybrid_auth import HybridAuthentication as Authentication
 
 from utils.session_state import SessionState
 from config.app_config import APP_CONFIG
@@ -296,6 +292,14 @@ def show_main_app():
         </div>
         """, unsafe_allow_html=True)
 
+        # Authentication backend status
+        auth = Authentication()
+        backend_info = auth.get_backend_info()
+        if backend_info['backend'] == 'supabase':
+            st.success(f"✅ {backend_info['message']}")
+        else:
+            st.warning(f"⚠️ {backend_info['message']}")
+        
         # Navigation
         st.markdown("### 📍 Navigation")
         page = st.radio(
