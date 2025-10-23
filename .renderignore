@@ -1,7 +1,7 @@
 # Render Ignore File - Exclude unnecessary files from deployment
 # This speeds up deployment by reducing upload size
 
-# Documentation files
+# Documentation files (NOT NEEDED AT RUNTIME)
 *.md
 CHANGELOG.md
 README.md
@@ -33,9 +33,6 @@ htmlcov/
 
 # Database files (using Supabase cloud)
 data/users.json
-*.db
-*.sqlite
-*.sqlite3
 
 # SQL scripts (not needed in production)
 *.sql
@@ -46,9 +43,6 @@ enable_sql_auth.ps1
 
 # Batch/Shell scripts (local use only)
 *.bat
-*.sh
-run.bat
-run.sh
 INSTANT_LAUNCH.bat
 LAUNCH_APP.bat
 launch_web_dashboard.bat
@@ -79,7 +73,6 @@ Thumbs.db
 # Test files
 test_*.py
 *_test.py
-tests/
 
 # Image archives and documentation
 image/
@@ -90,19 +83,9 @@ pyrightconfig.json
 .env
 .env.local
 
-# Exports and uploads (should use cloud storage)
-data/exports/
-data/reports/
-data/uploads/
-
-# Backend folder (if not used)
-backend/
-
-# Templates (if not used)
-templates/
-
-# Nested streamlit-app folder (duplicate)
+# Nested streamlit-app folder (duplicate - causes conflicts)
 streamlit-app/
 
 # License (not needed at runtime)
 LICENSE
+

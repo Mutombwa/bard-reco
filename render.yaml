@@ -5,18 +5,18 @@ services:
     region: oregon
     plan: free
     branch: main
-    # Faster build with pip cache and no-compile
-    buildCommand: pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
-    # Optimized start command with performance flags
-    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --server.runOnSave false --server.fileWatcherType none --browser.gatherUsageStats false
+    # Memory-optimized build - install only what's needed
+    buildCommand: pip install --no-cache-dir --no-deps streamlit pandas openpyxl rapidfuzz supabase plotly && pip install --no-cache-dir -r requirements.txt
+    # Optimized start with memory limits
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --server.runOnSave false --server.fileWatcherType none --browser.gatherUsageStats false --server.maxUploadSize 50
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      # Streamlit settings
       - key: STREAMLIT_SERVER_ENABLE_CORS
         value: false
       - key: STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION
         value: true
-      # Performance optimizations
       - key: STREAMLIT_BROWSER_GATHER_USAGE_STATS
         value: false
       - key: STREAMLIT_SERVER_FILE_WATCHER_TYPE
@@ -24,9 +24,11 @@ services:
       - key: STREAMLIT_SERVER_RUN_ON_SAVE
         value: false
       - key: STREAMLIT_SERVER_MAX_UPLOAD_SIZE
-        value: 200
-      # Python optimizations
+        value: 50
+      # Python memory optimizations
       - key: PYTHONUNBUFFERED
         value: 1
       - key: PYTHONDONTWRITEBYTECODE
         value: 1
+      - key: MALLOC_TRIM_THRESHOLD_
+        value: 100000
