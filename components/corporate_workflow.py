@@ -160,34 +160,46 @@ class CorporateWorkflow:
         # =============================================================================
         # STEP 1: VECTORIZED DATA PREPARATION (< 0.1s for 100k rows)
         # =============================================================================
-        status_placeholder.info("⚡ **Step 1/7:** Vectorized data preparation...")
+        status_placeholder.info("⚡ **Step 1/7 (0.0%):** Vectorized data preparation...")
         df = df.copy()
         original_row_count = len(df)
 
-        # Vectorized cleaning - all at once
+        # Sub-step 1.1: Clean debits/credits
+        status_placeholder.info(f"⚡ **Step 1/7 (2.0%):** Cleaning {original_row_count:,} debit/credit amounts...")
         df['_debit'] = pd.to_numeric(df[debit_col], errors='coerce').fillna(0).abs()
         df['_credit'] = pd.to_numeric(df[credit_col], errors='coerce').fillna(0).abs()
+        progress_bar.progress(0.02)
+
+        # Sub-step 1.2: Clean references/journals
+        status_placeholder.info(f"⚡ **Step 1/7 (5.0%):** Normalizing references and journals...")
         df['_reference'] = df[ref_col].astype(str).str.strip().str.upper()
         df['_journal'] = df[journal_col].astype(str).str.strip()
+        progress_bar.progress(0.05)
 
-        # Mark blank references with unique IDs (prevents blank matching)
+        # Sub-step 1.3: Mark blank references
+        status_placeholder.info(f"⚡ **Step 1/7 (8.0%):** Marking blank references with unique IDs...")
         blank_mask = df['_reference'].isin(['', 'NAN', 'NONE', 'NULL', '0', 'NATT'])
-        df.loc[blank_mask, '_reference'] = [f'__BLANK_{i}__' for i in range(blank_mask.sum())]
+        blank_count = blank_mask.sum()
+        df.loc[blank_mask, '_reference'] = [f'__BLANK_{i}__' for i in range(blank_count)]
+        progress_bar.progress(0.10)
 
-        progress_bar.progress(10)
         step1_time = time.time() - start_time
-        metrics_placeholder.success(f"✅ Step 1 complete: {step1_time:.3f}s | {original_row_count:,} rows prepared")
+        metrics_placeholder.success(f"✅ Step 1 complete: {step1_time:.3f}s | {original_row_count:,} rows prepared | {blank_count:,} blanks marked")
 
         # =============================================================================
         # STEP 2: BUILD HASH MAPS FOR O(1) LOOKUPS
         # =============================================================================
-        status_placeholder.info("🗂️ **Step 2/7:** Building hash indexes...")
+        status_placeholder.info(f"🗂️ **Step 2/7 (10.0%):** Building hash indexes for {original_row_count:,} rows...")
 
         # Create efficient lookup structures
         ref_to_indices = defaultdict(list)
         journal_to_indices = defaultdict(list)
 
-        for idx in df.index:
+        # Build indexes with progress updates
+        total_rows = len(df.index)
+        update_interval = max(1, total_rows // 20)  # Update 20 times during this step
+
+        for i, idx in enumerate(df.index):
             ref = df.loc[idx, '_reference']
             journal = df.loc[idx, '_journal']
 
@@ -197,9 +209,18 @@ class CorporateWorkflow:
 
             journal_to_indices[journal].append(idx)
 
-        progress_bar.progress(20)
+            # Update progress periodically
+            if i % update_interval == 0:
+                current_progress = 0.10 + (i / total_rows) * 0.05  # 10% to 15%
+                progress_pct = current_progress * 100
+                status_placeholder.info(f"🗂️ **Step 2/7 ({progress_pct:.1f}%):** Indexing row {i+1:,} / {total_rows:,}...")
+                progress_bar.progress(current_progress)
+
+        progress_bar.progress(0.15)
         step2_time = time.time() - start_time
-        metrics_placeholder.success(f"✅ Step 2 complete: {step2_time-step1_time:.3f}s | Indexes built")
+        unique_refs = len(ref_to_indices)
+        unique_journals = len(journal_to_indices)
+        metrics_placeholder.success(f"✅ Step 2 complete: {step2_time-step1_time:.3f}s | {unique_refs:,} unique refs | {unique_journals:,} journals indexed")
 
         # Initialize tracking
         matched = set()
@@ -210,51 +231,84 @@ class CorporateWorkflow:
         batch5_rows = []
 
         # =============================================================================
-        # BATCH 1: CORRECTING JOURNALS (Hash-based matching)
+        # BATCH 1: CORRECTING JOURNALS (Ultra-fast vectorized matching)
         # =============================================================================
-        status_placeholder.info("🔍 **Step 3/7:** Batch 1 - Correcting Journals...")
+        status_placeholder.info("🔍 **Step 3/7 (15.0%):** Batch 1 - Correcting Journals...")
 
+        # Extract all correcting journal references with vectorized regex
         correcting_mask = df['_reference'].str.contains('CORRECTING', na=False, case=False)
-        correcting_indices = df[correcting_mask].index.tolist()
+        correcting_df = df[correcting_mask].copy()
+        total_correcting = len(correcting_df)
 
-        for idx in correcting_indices:
-            if idx in matched:
-                continue
+        if total_correcting > 0:
+            # Vectorized extraction of journal numbers from "Correcting J239918" format
+            # Extract just the digits after "J" - handles J239918, J1, J239, etc.
+            correcting_df['_journal_num'] = correcting_df['_reference'].str.extract(r'J(\d+)', flags=re.IGNORECASE)[0]
+            
+            # Remove rows where extraction failed
+            valid_correcting = correcting_df[correcting_df['_journal_num'].notna()].copy()
+            
+            # Normalize journal numbers: convert to string and remove leading zeros for matching
+            # This ensures "239918" matches "239918", "1" matches "1", "239" matches "239"
+            valid_correcting['_journal_normalized'] = valid_correcting['_journal_num'].astype(str).str.lstrip('0')
+            valid_correcting.loc[valid_correcting['_journal_normalized'] == '', '_journal_normalized'] = '0'
+            
+            # Normalize journal column for matching - handle both string and numeric journals
+            df['_journal_normalized'] = df['_journal'].astype(str).str.strip().str.lstrip('0')
+            df.loc[df['_journal_normalized'] == '', '_journal_normalized'] = '0'
+            
+            # Ultra-fast hash-based matching using merge
+            matched_pairs = []
+            
+            for idx, corr_row in valid_correcting.iterrows():
+                if idx in matched:
+                    continue
+                
+                journal_to_find = corr_row['_journal_normalized']
+                
+                # Find matching journal transactions (excluding the correcting entry itself)
+                potential_matches = df[
+                    (df['_journal_normalized'] == journal_to_find) &
+                    (~df.index.isin(matched)) &
+                    (df.index != idx)
+                ]
+                
+                if not potential_matches.empty:
+                    # Take first match
+                    match_idx = potential_matches.index[0]
+                    
+                    # Add as paired rows (matched transaction FIRST, then correcting)
+                    batch1_rows.append(df.loc[match_idx])
+                    batch1_rows.append(df.loc[idx])
+                    matched.add(idx)
+                    matched.add(match_idx)
+            
+            # Cleanup temporary columns
+            df.drop(columns=['_journal_normalized'], inplace=True, errors='ignore')
 
-            ref = df.loc[idx, '_reference']
-            journal_match = re.search(r'J(\d+)', ref, re.IGNORECASE)
-
-            if journal_match:
-                journal_num = journal_match.group(1)
-
-                # Hash lookup - O(1)
-                potential_matches = journal_to_indices.get(journal_num, [])
-
-                for match_idx in potential_matches:
-                    if match_idx not in matched and match_idx != idx:
-                        batch1_rows.append(df.loc[match_idx])
-                        batch1_rows.append(df.loc[idx])
-                        matched.add(idx)
-                        matched.add(match_idx)
-                        break
-
-        progress_bar.progress(35)
+        progress_bar.progress(0.30)
         step3_time = time.time() - start_time
-        metrics_placeholder.success(f"✅ Batch 1 complete: {step3_time-step2_time:.3f}s | {len(batch1_rows):,} transactions")
+        batch1_pairs = len(batch1_rows) // 2 if len(batch1_rows) > 0 else 0
+        metrics_placeholder.success(f"✅ Batch 1 complete: {step3_time-step2_time:.3f}s | {len(batch1_rows):,} transactions in {batch1_pairs:,} pairs ({total_correcting:,} correcting entries found)")
 
         # =============================================================================
         # BATCH 2-5: VECTORIZED MATCHING WITH HASH LOOKUP
         # =============================================================================
-        status_placeholder.info("⚡ **Step 4/7:** Batches 2-5 - Ultra-fast vectorized matching...")
+        status_placeholder.info("⚡ **Step 4/7 (30.0%):** Batches 2-5 - Ultra-fast vectorized matching...")
 
         # Process only unmatched transactions
         unmatched_mask = ~df.index.isin(matched)
         unmatched_df = df[unmatched_mask].copy()
 
         # Group by reference for batch processing
-        for ref, group in unmatched_df.groupby('_reference'):
+        grouped_refs = list(unmatched_df.groupby('_reference'))
+        total_ref_groups = len(grouped_refs)
+        processed_groups = 0
+
+        for ref, group in grouped_refs:
             # Skip blanks
             if str(ref).startswith('__BLANK_') or len(group) < 2:
+                processed_groups += 1
                 continue
 
             # Split into debit/credit
@@ -262,6 +316,7 @@ class CorporateWorkflow:
             credit_rows = group[group['_credit'] > 0]
 
             if len(debit_rows) == 0 or len(credit_rows) == 0:
+                processed_groups += 1
                 continue
 
             # Vectorized matching
@@ -324,45 +379,93 @@ class CorporateWorkflow:
                         used_credit.add(j)
                         continue
 
-        progress_bar.progress(80)
+            processed_groups += 1
+
+            # Update progress every 5% of groups or every 100 groups, whichever is smaller
+            update_freq = min(100, max(1, total_ref_groups // 20))
+            if processed_groups % update_freq == 0 or processed_groups == total_ref_groups:
+                current_progress = 0.30 + (processed_groups / total_ref_groups) * 0.50  # 30% to 80%
+                progress_pct = current_progress * 100
+                total_matched = len(batch2_rows) + len(batch3_rows) + len(batch4_rows) + len(batch5_rows)
+
+                # Show current reference being processed (truncate if too long)
+                ref_display = str(ref)[:30] + "..." if len(str(ref)) > 30 else str(ref)
+                status_placeholder.info(
+                    f"⚡ **Step 4/7 ({progress_pct:.1f}%):** Processing reference group {processed_groups:,} / {total_ref_groups:,}\n"
+                    f"Current Ref: `{ref_display}` | Total Matched: {total_matched:,} (B2: {len(batch2_rows):,}, B3: {len(batch3_rows):,}, B4: {len(batch4_rows):,}, B5: {len(batch5_rows):,})"
+                )
+                progress_bar.progress(current_progress)
+
+        progress_bar.progress(0.80)
         step4_time = time.time() - start_time
-        metrics_placeholder.success(f"✅ Batches 2-5 complete: {step4_time-step3_time:.3f}s | {len(batch2_rows)+len(batch3_rows)+len(batch4_rows)+len(batch5_rows):,} transactions")
+        total_matched_2_5 = len(batch2_rows) + len(batch3_rows) + len(batch4_rows) + len(batch5_rows)
+        metrics_placeholder.success(f"✅ Batches 2-5 complete: {step4_time-step3_time:.3f}s | {total_matched_2_5:,} transactions | {processed_groups:,} ref groups processed")
 
         # =============================================================================
         # BATCH 6: UNMATCHED
         # =============================================================================
-        status_placeholder.info("📊 **Step 5/7:** Batch 6 - Collecting unmatched...")
+        status_placeholder.info("📊 **Step 5/7 (80.0%):** Batch 6 - Collecting unmatched transactions...")
         batch6_indices = set(df.index) - matched
 
-        # Create batch DataFrames
+        # Create batch DataFrames with progress updates
+        status_placeholder.info("📊 **Step 5/7 (82.0%):** Creating Batch 1 DataFrame (Correcting Journals)...")
         batch1_df = pd.DataFrame(batch1_rows) if batch1_rows else pd.DataFrame()
-        batch2_df = pd.DataFrame(batch2_rows) if batch2_rows else pd.DataFrame()
-        batch3_df = pd.DataFrame(batch3_rows) if batch3_rows else pd.DataFrame()
-        batch4_df = pd.DataFrame(batch4_rows) if batch4_rows else pd.DataFrame()
-        batch5_df = pd.DataFrame(batch5_rows) if batch5_rows else pd.DataFrame()
-        batch6_df = df.loc[list(batch6_indices)].copy() if batch6_indices else pd.DataFrame()
+        progress_bar.progress(0.82)
 
-        progress_bar.progress(90)
+        status_placeholder.info("📊 **Step 5/7 (84.0%):** Creating Batch 2 DataFrame (Exact Matches)...")
+        batch2_df = pd.DataFrame(batch2_rows) if batch2_rows else pd.DataFrame()
+        progress_bar.progress(0.84)
+
+        status_placeholder.info("📊 **Step 5/7 (86.0%):** Creating Batch 3 DataFrame (FD Commission)...")
+        batch3_df = pd.DataFrame(batch3_rows) if batch3_rows else pd.DataFrame()
+        progress_bar.progress(0.86)
+
+        status_placeholder.info("📊 **Step 5/7 (88.0%):** Creating Batch 4 DataFrame (FC Commission)...")
+        batch4_df = pd.DataFrame(batch4_rows) if batch4_rows else pd.DataFrame()
+        progress_bar.progress(0.88)
+
+        status_placeholder.info("📊 **Step 5/7 (90.0%):** Creating Batch 5 DataFrame (Rate Differences)...")
+        batch5_df = pd.DataFrame(batch5_rows) if batch5_rows else pd.DataFrame()
+        progress_bar.progress(0.90)
+
+        status_placeholder.info(f"📊 **Step 5/7 (92.0%):** Creating Batch 6 DataFrame ({len(batch6_indices):,} Unmatched)...")
+        batch6_df = df.loc[list(batch6_indices)].copy() if batch6_indices else pd.DataFrame()
+        progress_bar.progress(0.92)
 
         # =============================================================================
         # DATA INTEGRITY VALIDATION
         # =============================================================================
-        status_placeholder.info("✅ **Step 6/7:** Validating data integrity...")
+        status_placeholder.info("✅ **Step 6/7 (92.0%):** Validating data integrity...")
 
+        # Calculate row counts
+        status_placeholder.info("✅ **Step 6/7 (93.0%):** Validating row counts...")
         total_output = len(batch1_df) + len(batch2_df) + len(batch3_df) + len(batch4_df) + len(batch5_df) + len(batch6_df)
+        progress_bar.progress(0.93)
+
+        # Calculate original sums
+        status_placeholder.info("✅ **Step 6/7 (95.0%):** Calculating original debit/credit sums...")
         orig_debit_sum = df['_debit'].sum()
         orig_credit_sum = df['_credit'].sum()
+        progress_bar.progress(0.95)
 
+        # Calculate output sums
+        status_placeholder.info("✅ **Step 6/7 (97.0%):** Calculating output debit/credit sums...")
         out_debit_sum = sum(b['_debit'].sum() if not b.empty and '_debit' in b.columns else 0
                            for b in [batch1_df, batch2_df, batch3_df, batch4_df, batch5_df, batch6_df])
         out_credit_sum = sum(b['_credit'].sum() if not b.empty and '_credit' in b.columns else 0
                             for b in [batch1_df, batch2_df, batch3_df, batch4_df, batch5_df, batch6_df])
+        progress_bar.progress(0.97)
 
+        # Check for issues
+        status_placeholder.info("✅ **Step 6/7 (98.0%):** Running integrity checks...")
         has_duplicates = total_output != original_row_count
         sum_mismatch = abs(orig_debit_sum - out_debit_sum) > 0.01 or abs(orig_credit_sum - out_credit_sum) > 0.01
+        progress_bar.progress(0.98)
 
         elapsed_time = time.time() - start_time
 
+        # Prepare results
+        status_placeholder.info("🎉 **Step 7/7 (99.0%):** Preparing final results...")
         results = {
             'batch1': batch1_df, 'batch2': batch2_df, 'batch3': batch3_df,
             'batch4': batch4_df, 'batch5': batch5_df, 'batch6': batch6_df,
@@ -377,10 +480,18 @@ class CorporateWorkflow:
                 'has_duplicates': has_duplicates, 'sum_mismatch': sum_mismatch
             }
         }
+        progress_bar.progress(0.99)
 
-        progress_bar.progress(100)
+        # Save to session state
+        status_placeholder.info("🎉 **Step 7/7 (100.0%):** Finalizing and saving results...")
         st.session_state.corporate_results = results
+        progress_bar.progress(1.0)
 
+        # Show completion message briefly
+        status_placeholder.success("✅ **COMPLETE!** All batches processed successfully!")
+        time.sleep(0.5)  # Brief pause to show completion
+
+        # Clear progress indicators
         status_placeholder.empty()
         progress_placeholder.empty()
         metrics_placeholder.empty()
