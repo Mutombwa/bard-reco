@@ -268,7 +268,7 @@ class BidvestWorkflow:
         """Execute reference extraction from comment column"""
         try:
             with st.spinner("🔄 Extracting RJ references..."):
-                ledger = st.session_state.bidvest_ledger
+                ledger = st.session_state.bidvest_ledger.copy()
                 
                 # Apply extraction to all rows
                 ledger['Reference'] = ledger[comment_col].apply(self.extract_references)
@@ -276,8 +276,13 @@ class BidvestWorkflow:
                 # Count how many references were extracted
                 non_empty_refs = ledger['Reference'].apply(lambda x: len(x) > 0 if isinstance(x, str) else False).sum()
                 
+                # Update the session state
                 st.session_state.bidvest_ledger = ledger
                 st.session_state.bidvest_reference_extracted = True
+                
+                # IMPORTANT: If reconciliation was already run, update the results ledger too
+                if st.session_state.bidvest_results is not None:
+                    st.session_state.bidvest_results['ledger'] = ledger
                 
                 st.success(f"✅ Extracted references from {non_empty_refs:,} out of {len(ledger):,} rows!")
                 
@@ -388,6 +393,9 @@ class BidvestWorkflow:
                 cfg = st.session_state.bidvest_match_config
                 ledger = st.session_state.bidvest_ledger.copy()
                 statement = st.session_state.bidvest_statement.copy()
+                
+                # Preserve Reference column if it exists
+                has_reference_col = 'Reference' in ledger.columns
 
                 # Get column names
                 l_date_col = cfg['ledger_date']
