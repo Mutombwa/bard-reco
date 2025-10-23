@@ -135,32 +135,50 @@ class BidvestWorkflow:
             ledger_file = st.file_uploader("Upload Ledger (Excel/CSV)", type=['xlsx', 'xls', 'csv'], key='bidvest_ledger_upload')
 
             if ledger_file is not None:
-                try:
-                    if ledger_file.name.endswith('.csv'):
-                        st.session_state.bidvest_ledger = pd.read_csv(ledger_file)
-                    else:
-                        st.session_state.bidvest_ledger = pd.read_excel(ledger_file)
+                # Only load file if it's NEW (check file ID to avoid reloading on every rerun)
+                file_id = f"{ledger_file.name}_{ledger_file.size}"
+                
+                if 'bidvest_ledger_file_id' not in st.session_state or st.session_state.bidvest_ledger_file_id != file_id:
+                    try:
+                        if ledger_file.name.endswith('.csv'):
+                            st.session_state.bidvest_ledger = pd.read_csv(ledger_file)
+                        else:
+                            st.session_state.bidvest_ledger = pd.read_excel(ledger_file)
 
-                    st.success(f"✅ Loaded {len(st.session_state.bidvest_ledger)} ledger rows")
-                    # Reset reference extraction flag when new file uploaded
-                    st.session_state.bidvest_reference_extracted = False
-                except Exception as e:
-                    st.error(f"❌ Error loading ledger: {str(e)}")
+                        st.success(f"✅ Loaded {len(st.session_state.bidvest_ledger)} ledger rows")
+                        # Store file ID to prevent reloading
+                        st.session_state.bidvest_ledger_file_id = file_id
+                        # Reset reference extraction flag when new file uploaded
+                        st.session_state.bidvest_reference_extracted = False
+                    except Exception as e:
+                        st.error(f"❌ Error loading ledger: {str(e)}")
+                else:
+                    # File already loaded, show status
+                    st.info(f"📋 Using cached ledger ({len(st.session_state.bidvest_ledger)} rows)")
 
         with col2:
             st.markdown("**Bank Statement File**")
             statement_file = st.file_uploader("Upload Statement (Excel/CSV)", type=['xlsx', 'xls', 'csv'], key='bidvest_statement_upload')
 
             if statement_file is not None:
-                try:
-                    if statement_file.name.endswith('.csv'):
-                        st.session_state.bidvest_statement = pd.read_csv(statement_file)
-                    else:
-                        st.session_state.bidvest_statement = pd.read_excel(statement_file)
+                # Only load file if it's NEW (check file ID to avoid reloading on every rerun)
+                file_id = f"{statement_file.name}_{statement_file.size}"
+                
+                if 'bidvest_statement_file_id' not in st.session_state or st.session_state.bidvest_statement_file_id != file_id:
+                    try:
+                        if statement_file.name.endswith('.csv'):
+                            st.session_state.bidvest_statement = pd.read_csv(statement_file)
+                        else:
+                            st.session_state.bidvest_statement = pd.read_excel(statement_file)
 
-                    st.success(f"✅ Loaded {len(st.session_state.bidvest_statement)} statement rows")
-                except Exception as e:
-                    st.error(f"❌ Error loading statement: {str(e)}")
+                        st.success(f"✅ Loaded {len(st.session_state.bidvest_statement)} statement rows")
+                        # Store file ID to prevent reloading
+                        st.session_state.bidvest_statement_file_id = file_id
+                    except Exception as e:
+                        st.error(f"❌ Error loading statement: {str(e)}")
+                else:
+                    # File already loaded, show status
+                    st.info(f"📋 Using cached statement ({len(st.session_state.bidvest_statement)} rows)")
         
         # Add View & Edit Data section
         if st.session_state.bidvest_ledger is not None or st.session_state.bidvest_statement is not None:
@@ -265,36 +283,60 @@ class BidvestWorkflow:
             st.warning("⚠️ No 'Comment' column found. Please ensure your ledger has a column named 'Comment' or 'B'.")
     
     def execute_reference_extraction(self, comment_col):
-        """Execute reference extraction from comment column"""
+        """Execute reference extraction from comment column - Following FNB pattern"""
         try:
+            # Work directly with session state (NO .copy())
+            ledger = st.session_state.bidvest_ledger
+            
+            # Check if Reference column already exists
+            if 'Reference' in ledger.columns:
+                st.info("ℹ️ Reference column already exists in ledger")
+                return
+            
             with st.spinner("🔄 Extracting RJ references..."):
-                ledger = st.session_state.bidvest_ledger.copy()
-                
-                # Apply extraction to all rows
-                ledger['Reference'] = ledger[comment_col].apply(self.extract_references)
+                # Extract references into a list
+                references = []
+                for comment in ledger[comment_col]:
+                    ref = self.extract_references(comment)
+                    references.append(ref)
                 
                 # Count how many references were extracted
-                non_empty_refs = ledger['Reference'].apply(lambda x: len(x) > 0 if isinstance(x, str) else False).sum()
+                non_empty_refs = sum(1 for ref in references if ref and len(ref) > 0)
                 
-                # Update the session state
+                # Find position of comment column
+                comment_idx = list(ledger.columns).index(comment_col)
+                
+                # Insert Reference column RIGHT AFTER the comment column (like FNB does)
+                ledger.insert(comment_idx + 1, 'Reference', references)
+                
+                # Update session state directly (ledger is already a reference)
+                # But reassign to ensure it's updated
                 st.session_state.bidvest_ledger = ledger
                 st.session_state.bidvest_reference_extracted = True
                 
-                # IMPORTANT: If reconciliation was already run, update the results ledger too
-                if st.session_state.bidvest_results is not None:
-                    st.session_state.bidvest_results['ledger'] = ledger
-                
-                st.success(f"✅ Extracted references from {non_empty_refs:,} out of {len(ledger):,} rows!")
+                # Show success message
+                st.success(f"✅ Reference column added to Ledger after {comment_col} column!")
+                st.info(f"📊 Processed {len(references):,} transactions\n\n"
+                       f"💾 **Column persisted!** Extracted {non_empty_refs:,} RJ references.\n\n"
+                       f"✨ The Reference column will now appear in column configuration and exports.")
                 
                 # Show preview
-                st.markdown("**Preview of extracted references:**")
-                preview_df = ledger[[comment_col, 'Reference']].head(10)
-                st.dataframe(preview_df, use_container_width=True)
+                with st.expander("📋 Sample Extractions (First 10)"):
+                    preview_data = []
+                    for i in range(min(10, len(references))):
+                        preview_data.append({
+                            'Comment': ledger.iloc[i][comment_col],
+                            'Extracted Reference': references[i]
+                        })
+                    st.dataframe(pd.DataFrame(preview_data), use_container_width=True)
                 
+                # Trigger rerun to refresh UI
                 st.rerun()
                 
         except Exception as e:
             st.error(f"❌ Error extracting references: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
 
     def render_column_configuration(self):
         """Render column configuration"""
@@ -303,6 +345,12 @@ class BidvestWorkflow:
 
         ledger_cols = list(st.session_state.bidvest_ledger.columns)
         statement_cols = list(st.session_state.bidvest_statement.columns)
+        
+        # DEBUG: Show available columns
+        if 'Reference' in ledger_cols:
+            st.success(f"✅ Reference column detected in ledger! Available columns: {len(ledger_cols)}")
+        else:
+            st.info(f"ℹ️ Ledger columns ({len(ledger_cols)}): {', '.join(ledger_cols[:10])}{'...' if len(ledger_cols) > 10 else ''}")
 
         col1, col2 = st.columns(2)
 
@@ -813,6 +861,9 @@ class BidvestWorkflow:
             # Get all original columns (excluding helper columns)
             ledger_cols = [col for col in ledger.columns if not col.startswith('__')]
             stmt_cols = [col for col in statement.columns if not col.startswith('__')]
+            
+            # DEBUG: Show what columns are available
+            st.info(f"📋 **Available Ledger Columns:** {', '.join(ledger_cols)}")
             
             # ========== COLUMN SELECTION UI ==========
             st.markdown("---")
