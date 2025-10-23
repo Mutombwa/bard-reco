@@ -1,6 +1,6 @@
 # ==============================================
 # Streamlit Configuration
-# Optimized for Streamlit Cloud Deployment
+# Optimized for Cloud Deployment (Render & Streamlit Cloud)
 # ==============================================
 
 [server]
@@ -9,6 +9,8 @@ headless = true
 enableCORS = false
 enableXsrfProtection = true
 maxUploadSize = 200
+runOnSave = false
+fileWatcherType = "none"
 
 [browser]
 gatherUsageStats = false
@@ -23,3 +25,7 @@ font = "sans serif"
 [runner]
 magicEnabled = true
 fastReruns = true
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = true

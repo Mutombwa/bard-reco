@@ -1,0 +1,108 @@
+# Render Ignore File - Exclude unnecessary files from deployment
+# This speeds up deployment by reducing upload size
+
+# Documentation files
+*.md
+CHANGELOG.md
+README.md
+DEPLOYMENT.md
+TROUBLESHOOTING.md
+WORKFLOWS_GUIDE.md
+QUICK_START.md
+PROJECT_SUMMARY.md
+RENDER_DEPLOYMENT.md
+DEPLOYMENT_OPTIONS.md
+PERFORMANCE_OPTIMIZATIONS.md
+REFERENCE_ONLY_OPTIMIZATION.md
+FAST_PATH_FIX.md
+SUPABASE_USER_GUIDE.md
+
+# Development files
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database files (using Supabase cloud)
+data/users.json
+*.db
+*.sqlite
+*.sqlite3
+
+# SQL scripts (not needed in production)
+*.sql
+database_setup.sql
+create_sql_user.sql
+fix_all_passwords.sql
+enable_sql_auth.ps1
+
+# Batch/Shell scripts (local use only)
+*.bat
+*.sh
+run.bat
+run.sh
+INSTANT_LAUNCH.bat
+LAUNCH_APP.bat
+launch_web_dashboard.bat
+RUN_ANYWHERE.bat
+Ultra_Fast.bat
+CLEANUP_UNNECESSARY_FILES.bat
+
+# Docker files (we're using native Python)
+Dockerfile*
+docker-compose.yml*
+*.docker-backup
+*.backup
+
+# Build artifacts
+*.spec
+ReconciliationApp.spec
+dist/
+build/
+*.egg-info/
+
+# IDE and editor files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Image archives and documentation
+image/
+DELETED_FILES_LIST.txt
+
+# Config files (using environment variables)
+pyrightconfig.json
+.env
+.env.local
+
+# Exports and uploads (should use cloud storage)
+data/exports/
+data/reports/
+data/uploads/
+
+# Backend folder (if not used)
+backend/
+
+# Templates (if not used)
+templates/
+
+# Nested streamlit-app folder (duplicate)
+streamlit-app/
+
+# License (not needed at runtime)
+LICENSE
