@@ -14,6 +14,15 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+# Check authentication first
+from utils.session_state import SessionState
+if 'session' not in st.session_state:
+    st.session_state.session = SessionState()
+
+if not st.session_state.session.is_authenticated:
+    st.warning("🔒 Please login first to access this page")
+    st.stop()
+
 from utils.sql_database import ReconciliationDatabase, PYODBC_AVAILABLE
 from utils.postgres_database import PostgreSQLDatabase, PSYCOPG2_AVAILABLE
 from urllib.parse import quote_plus

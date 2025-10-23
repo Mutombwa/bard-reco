@@ -251,35 +251,6 @@ def show_login_page():
                     st.session_state.show_register = False
                     st.rerun()
 
-        # Features showcase
-        st.markdown("---")
-        st.markdown("### ✨ Features")
-
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            st.markdown("""
-            <div class="metric-card">
-                <h4>🚀 Fast</h4>
-                <p>Lightning-fast reconciliation engine</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col_b:
-            st.markdown("""
-            <div class="metric-card">
-                <h4>🔒 Secure</h4>
-                <p>Enterprise-grade security</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col_c:
-            st.markdown("""
-            <div class="metric-card">
-                <h4>☁️ Cloud</h4>
-                <p>Access anywhere, anytime</p>
-            </div>
-            """, unsafe_allow_html=True)
-
 def show_main_app():
     """Display main application interface"""
 
@@ -314,19 +285,7 @@ def show_main_app():
 
         st.markdown("---")
         
-        # Bard Santner Logo
-        import os
-        if os.path.exists("assets/bard_logo.png"):
-            st.image("assets/bard_logo.png", use_column_width=True)
-            st.markdown("---")
 
-        # Quick stats
-        st.markdown("### 📊 Quick Stats")
-        st.metric("Total Reconciliations", st.session_state.session.get_stat('total_reconciliations', 0))
-        st.metric("Matched Transactions", st.session_state.session.get_stat('matched_transactions', 0))
-        st.metric("Success Rate", f"{st.session_state.session.get_stat('success_rate', 0)}%")
-
-        st.markdown("---")
 
         # Logout button
         if st.button("🚪 Logout", use_container_width=True):
