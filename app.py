@@ -293,12 +293,16 @@ def show_main_app():
         """, unsafe_allow_html=True)
 
         # Authentication backend status
-        auth = Authentication()
-        backend_info = auth.get_backend_info()
-        if backend_info['backend'] == 'supabase':
-            st.success(f"✅ {backend_info['message']}")
-        else:
-            st.warning(f"⚠️ {backend_info['message']}")
+        try:
+            auth = Authentication()
+            backend_info = auth.get_backend_info()
+            if backend_info.get('backend') == 'supabase':
+                st.success(f"✅ {backend_info.get('message', 'Using Supabase cloud database')}")
+            else:
+                st.warning(f"⚠️ {backend_info.get('message', 'Using local file storage')}")
+        except Exception as e:
+            # Fallback if get_backend_info() not available
+            st.info("ℹ️ Authentication active")
         
         # Navigation
         st.markdown("### 📍 Navigation")
