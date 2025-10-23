@@ -36,6 +36,7 @@ Setup Instructions:
 
 import streamlit as st
 import hashlib
+import os
 from datetime import datetime
 from typing import Optional, Dict, Tuple
 
@@ -49,10 +50,17 @@ class SupabaseAuthentication:
         try:
             from supabase import create_client, Client
             
-            # Get credentials from Streamlit secrets
-            if "supabase" in st.secrets:
-                url = st.secrets["supabase"]["url"]
-                key = st.secrets["supabase"]["key"]
+            # Get credentials from environment variables (Render) OR Streamlit secrets (local/Streamlit Cloud)
+            url = os.getenv('SUPABASE_URL')
+            key = os.getenv('SUPABASE_KEY')
+            
+            # Fallback to Streamlit secrets if environment variables not set
+            if not url or not key:
+                if "supabase" in st.secrets:
+                    url = st.secrets["supabase"]["url"]
+                    key = st.secrets["supabase"]["key"]
+            
+            if url and key:
                 self.supabase: Client = create_client(url, key)
                 self.enabled = True
                 
