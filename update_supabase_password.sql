@@ -28,7 +28,7 @@ SELECT
     email, 
     role,
     created_at,
-    LEFT(password_hash, 20) || '...' as password_hash_preview
+    CONCAT(LEFT(password_hash, 20), '...') as password_hash_preview
 FROM users 
 WHERE username = 'Rosebud Mpofu';
 
