@@ -170,10 +170,10 @@ class CorporateWorkflow:
         df['_credit'] = pd.to_numeric(df[credit_col], errors='coerce').fillna(0).abs()
         progress_bar.progress(0.02)
 
-        # Sub-step 1.2: Clean references/journals
+        # Sub-step 1.2: Clean references/journals (CASE-INSENSITIVE)
         status_placeholder.info(f"⚡ **Step 1/7 (5.0%):** Normalizing references and journals...")
-        df['_reference'] = df[ref_col].astype(str).str.strip().str.upper()
-        df['_journal'] = df[journal_col].astype(str).str.strip()
+        df['_reference'] = df[ref_col].astype(str).str.strip().str.upper()  # Already uppercase
+        df['_journal'] = df[journal_col].astype(str).str.strip().str.upper()  # Make case-insensitive
         progress_bar.progress(0.05)
 
         # Sub-step 1.3: Mark blank references
@@ -248,43 +248,51 @@ class CorporateWorkflow:
             # Remove rows where extraction failed
             valid_correcting = correcting_df[correcting_df['_journal_num'].notna()].copy()
             
-            # Normalize journal numbers: convert to string and remove leading zeros for matching
-            # This ensures "239918" matches "239918", "1" matches "1", "239" matches "239"
-            valid_correcting['_journal_normalized'] = valid_correcting['_journal_num'].astype(str).str.lstrip('0')
-            valid_correcting.loc[valid_correcting['_journal_normalized'] == '', '_journal_normalized'] = '0'
+            # Create normalized journal lookup for entire dataframe
+            # Convert journal to string, remove .0 decimal, strip whitespace
+            df['_journal_str'] = df['_journal'].astype(str).str.strip()
+            # Remove .0 from floats (e.g., '61705.0' -> '61705')
+            df['_journal_str'] = df['_journal_str'].str.replace(r'\.0$', '', regex=True)
             
-            # Normalize journal column for matching - handle both string and numeric journals
-            df['_journal_normalized'] = df['_journal'].astype(str).str.strip().str.lstrip('0')
-            df.loc[df['_journal_normalized'] == '', '_journal_normalized'] = '0'
+            # Create a journal lookup dictionary for FAST O(1) matching
+            # Key: normalized journal (no leading zeros, no decimals), Value: list of indices
+            journal_lookup = {}
+            for idx in df.index:
+                if idx not in matched:
+                    j_str = df.loc[idx, '_journal_str']
+                    # Normalize: remove leading zeros and handle decimals
+                    j_normalized = j_str.lstrip('0') or '0'
+                    if j_normalized not in journal_lookup:
+                        journal_lookup[j_normalized] = []
+                    journal_lookup[j_normalized].append(idx)
             
-            # Ultra-fast hash-based matching using merge
-            matched_pairs = []
-            
+            # Match each correcting journal
             for idx, corr_row in valid_correcting.iterrows():
                 if idx in matched:
                     continue
                 
-                journal_to_find = corr_row['_journal_normalized']
+                # Extract journal number from correcting reference
+                journal_num = corr_row['_journal_num']
+                journal_normalized = journal_num.lstrip('0') or '0'
                 
-                # Find matching journal transactions (excluding the correcting entry itself)
-                potential_matches = df[
-                    (df['_journal_normalized'] == journal_to_find) &
-                    (~df.index.isin(matched)) &
-                    (df.index != idx)
-                ]
-                
-                if not potential_matches.empty:
-                    # Take first match
-                    match_idx = potential_matches.index[0]
+                # Look up matching journals using hash map (O(1))
+                if journal_normalized in journal_lookup:
+                    potential_indices = journal_lookup[journal_normalized]
                     
-                    # Add as paired rows (matched transaction FIRST, then correcting)
-                    batch1_rows.append(df.loc[match_idx])
-                    batch1_rows.append(df.loc[idx])
-                    matched.add(idx)
-                    matched.add(match_idx)
+                    # Find first unmatched transaction with this journal (excluding self)
+                    for match_idx in potential_indices:
+                        if match_idx != idx and match_idx not in matched:
+                            # Add as paired rows (matched transaction FIRST, then correcting)
+                            batch1_rows.append(df.loc[match_idx])
+                            batch1_rows.append(df.loc[idx])
+                            matched.add(idx)
+                            matched.add(match_idx)
+                            # Remove from lookup to prevent reuse
+                            journal_lookup[journal_normalized].remove(match_idx)
+                            break
             
             # Cleanup temporary columns
-            df.drop(columns=['_journal_normalized'], inplace=True, errors='ignore')
+            df.drop(columns=['_journal_str'], inplace=True, errors='ignore')
 
         progress_bar.progress(0.30)
         step3_time = time.time() - start_time
@@ -620,7 +628,7 @@ class CorporateWorkflow:
         st.markdown("### 📥 Export Results")
         col_exp1, col_exp2 = st.columns(2)
 
-        all_batches = []
+        # Define batch configs (used for both export and display)
         batch_configs = [
             ('batch1', 'Correcting Journal Batch'),
             ('batch2', 'Exact Match Batch'),
@@ -630,18 +638,27 @@ class CorporateWorkflow:
             ('batch6', 'Unmatched Transactions')
         ]
 
-        for batch_key, batch_title in batch_configs:
-            batch_df = results[batch_key].copy()
-            if not batch_df.empty:
-                display_df = batch_df.drop(columns=[c for c in batch_df.columns if c.startswith('_')], errors='ignore')
-                header_dict = {col: [batch_title if col == display_df.columns[0] else ''] for col in display_df.columns}
-                header_row = pd.DataFrame(header_dict)
-                empty_row = pd.DataFrame({col: [''] for col in display_df.columns})
-                all_batches.extend([header_row, display_df, empty_row])
+        # CACHE the combined export dataframe to avoid rebuilding on every render
+        if 'combined_export_df' not in results:
+            all_batches = []
 
-        if all_batches:
-            combined_df = pd.concat(all_batches, ignore_index=True)
+            for batch_key, batch_title in batch_configs:
+                batch_df = results[batch_key]
+                if not batch_df.empty:
+                    display_df = batch_df.drop(columns=[c for c in batch_df.columns if c.startswith('_')], errors='ignore')
+                    header_dict = {col: [batch_title if col == display_df.columns[0] else ''] for col in display_df.columns}
+                    header_row = pd.DataFrame(header_dict)
+                    empty_row = pd.DataFrame({col: [''] for col in display_df.columns})
+                    all_batches.extend([header_row, display_df, empty_row])
 
+            if all_batches:
+                results['combined_export_df'] = pd.concat(all_batches, ignore_index=True)
+            else:
+                results['combined_export_df'] = pd.DataFrame()
+
+        combined_df = results['combined_export_df']
+
+        if not combined_df.empty:
             with col_exp1:
                 from io import BytesIO
                 output = BytesIO()
@@ -656,6 +673,8 @@ class CorporateWorkflow:
                 csv_data = combined_df.to_csv(index=False).encode('utf-8')
                 st.download_button("📄 Download CSV", csv_data, "corporate_results.csv", "text/csv",
                                  use_container_width=True)
+        else:
+            st.warning("No data to export")
 
         # Summary metrics
         st.markdown("### 📊 Summary")
