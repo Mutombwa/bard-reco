@@ -347,6 +347,7 @@ def show_reconciliation_page():
     
     # Lazy import heavy modules only when this page is accessed
     from utils.file_loader import load_uploaded_file, get_dataframe_info
+    from components.data_editor import DataEditor
 
     st.markdown("""
     <div class="gradient-header">
