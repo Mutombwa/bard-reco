@@ -5,8 +5,8 @@ services:
     region: oregon
     plan: free
     branch: main
-    # Memory-optimized build - install only what's needed
-    buildCommand: pip install --no-cache-dir --no-deps streamlit pandas openpyxl rapidfuzz supabase plotly && pip install --no-cache-dir -r requirements.txt
+    # Simplified build - just install requirements
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     # Optimized start with memory limits
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --server.runOnSave false --server.fileWatcherType none --browser.gatherUsageStats false --server.maxUploadSize 50
     envVars:
