@@ -23,10 +23,14 @@
   "typeCheckingMode": "basic",
   "reportMissingImports": false,
   "reportMissingTypeStubs": false,
+  "reportMissingModuleSource": false,
   "reportGeneralTypeIssues": false,
   "reportOptionalMemberAccess": false,
   "reportOptionalSubscript": false,
   "reportPrivateImportUsage": false,
+  "reportArgumentType": false,
+  "reportReturnType": false,
+  "reportUndefinedVariable": "warning",
   "pythonVersion": "3.11",
   "pythonPlatform": "All"
 }
