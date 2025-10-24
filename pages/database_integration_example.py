@@ -7,6 +7,7 @@ This example shows how to integrate SQL Server saving into the FNB workflow
 import streamlit as st
 import sys
 from pathlib import Path
+import pandas as pd
 
 # Add parent directory to path
 parent_dir = str(Path(__file__).parent.parent)

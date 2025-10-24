@@ -39,44 +39,9 @@ class Dashboard:
     
     def load_from_database(self):
         """Load latest reconciliation results from database"""
-        try:
-            import sys
-            import os
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
-            from database import get_db
-            
-            db = get_db()
-            
-            # Get the most recent FNB result if not in session state
-            if not hasattr(self, 'fnb_results') or not self.fnb_results:
-                recent_results = db.list_results('FNB', limit=1)
-                if recent_results:
-                    result_id = recent_results[0][0]
-                    result_data = db.get_result(result_id)
-                    if result_data:
-                        self.fnb_results = result_data
-                    
-            # Get the most recent Bidvest result if not in session state
-            if not self.bidvest_results:
-                recent_results = db.list_results('Bidvest', limit=1)
-                if recent_results:
-                    result_id = recent_results[0][0]
-                    result_data = db.get_result(result_id)
-                    if result_data:
-                        self.bidvest_results = result_data
-                    
-            # Get the most recent Corporate result if not in session state
-            if not self.corporate_results:
-                recent_results = db.list_results('Corporate', limit=1)
-                if recent_results:
-                    result_id = recent_results[0][0]
-                    result_data = db.get_result(result_id)
-                    if result_data:
-                        self.corporate_results = result_data
-                    
-        except Exception as e:
-            # Silently fail if database not available
-            pass
+        # Database loading disabled - using session state only
+        # TODO: Implement database integration when needed
+        pass
 
     def render(self):
         """Render professional dashboard with transaction category navigation"""
