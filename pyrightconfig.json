@@ -1,0 +1,32 @@
+{
+  "include": [
+    "app.py",
+    "auth",
+    "components",
+    "config",
+    "pages",
+    "src",
+    "utils"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/node_modules",
+    "data",
+    "assets"
+  ],
+  "ignore": [
+    "**/__pycache__",
+    "data/**",
+    "assets/**"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": false,
+  "reportMissingTypeStubs": false,
+  "reportGeneralTypeIssues": false,
+  "reportOptionalMemberAccess": false,
+  "reportOptionalSubscript": false,
+  "reportPrivateImportUsage": false,
+  "pythonVersion": "3.11",
+  "pythonPlatform": "All"
+}
