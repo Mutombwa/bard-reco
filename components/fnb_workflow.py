@@ -136,6 +136,7 @@ class FNBWorkflow:
 
     def render_file_upload(self):
         """Render file upload section - Cloud deployment compatible"""
+        
         st.subheader("📁 Step 1: Import Files")
 
         col1, col2 = st.columns(2)
@@ -331,14 +332,18 @@ class FNBWorkflow:
 
                 # Pattern-based extraction for common transaction types
                 patterns = [
+                    # Phone number only (10 digits) - High priority
+                    (r'^\d{10}$', lambda m: m.group(0)),
+                    
                     # FNB APP PAYMENT FROM [NAME]
                     (r'FNB APP PAYMENT FROM\s+(.+)', lambda m: m.group(1).strip()),
 
-                    # ADT CASH DEPO variations
+                    # ADT CASH DEPO variations - Extract phone/ref at the END
+                    (r'ADT CASH DEPO[A-Z\d]+\s+(\d{10})\s*$', lambda m: m.group(1)),  # DEPO + alphanumeric code + 10-digit phone
+                    (r'ADT CASH DEPO[A-Z\d]+\s+([A-Z]+)\s*$', lambda m: m.group(1)),  # DEPO + alphanumeric code + name  
                     (r'ADT CASH DEPO00882112\s+(.+)', lambda m: m.group(1).strip()),
                     (r'ADT CASH DEPOSIT\s+(.+)', lambda m: m.group(1).strip()),
-                    (r'ADT CASH DEPO([A-Z]+)\s+(.+)', lambda m: m.group(2).strip()),
-                    (r'ADT CASH DEPO\w*\s+(.+)', lambda m: m.group(1).strip()),
+                    (r'ADT CASH DEPO\s+(.+)', lambda m: m.group(1).strip()),  # Generic fallback
 
                     # CAPITEC [NAME]
                     (r'CAPITEC\s+(.+)', lambda m: m.group(1).strip()),
@@ -365,8 +370,10 @@ class FNBWorkflow:
                             if result:
                                 # Clean up the reference name
                                 result = result.strip()
-                                # Remove common banking codes/numbers at end
-                                result = re.sub(r'\s*\d{10,}$', '', result)
+                                # Only remove trailing long numbers if there's a name before them
+                                # This preserves phone-only references like "0849667217"
+                                if re.match(r'^[A-Za-z\s]+\s+\d{10,}$', result):
+                                    result = re.sub(r'\s*\d{10,}$', '', result)
                                 return result
                         except Exception:
                             continue
@@ -859,6 +866,10 @@ class FNBWorkflow:
         date_col = settings.get('ledger_date_col', 'Date')
         if date_col in ledger.columns:
             ledger['date_normalized'] = pd.to_datetime(ledger[date_col], errors='coerce')
+            # Convert original date column to string to prevent timestamp corruption in results
+            ledger[date_col] = ledger['date_normalized'].apply(
+                lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(x) else ''
+            )
 
         # Standardize reference column
         ref_col = settings.get('ledger_ref_col', 'Reference')
@@ -895,6 +906,10 @@ class FNBWorkflow:
         date_col = settings.get('statement_date_col', 'Date')
         if date_col in statement.columns:
             statement['date_normalized'] = pd.to_datetime(statement[date_col], errors='coerce')
+            # Convert original date column to string to prevent timestamp corruption in results
+            statement[date_col] = statement['date_normalized'].apply(
+                lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(x) else ''
+            )
 
         # Standardize reference column
         ref_col = settings.get('statement_ref_col', 'Reference')
@@ -1092,11 +1107,33 @@ class FNBWorkflow:
 
                 # Add ALL ledger columns (prefixed with Ledger_)
                 for col in ledger_display_cols:
-                    row_data[f'Ledger_{col}'] = ledger_row[col]
+                    value = ledger_row[col]
+                    # Convert ANY datetime-like value to string (comprehensive check)
+                    if pd.api.types.is_datetime64_any_dtype(type(value)):
+                        value = pd.Timestamp(value).strftime('%Y-%m-%d %H:%M:%S')
+                    elif isinstance(value, (pd.Timestamp, datetime, np.datetime64)):
+                        value = pd.Timestamp(value).strftime('%Y-%m-%d %H:%M:%S')
+                    elif pd.notna(value) and hasattr(value, 'strftime'):
+                        value = value.strftime('%Y-%m-%d %H:%M:%S')
+                    # Also check column names that contain 'date' - force string conversion
+                    elif 'date' in col.lower() and pd.notna(value):
+                        value = str(value)
+                    row_data[f'Ledger_{col}'] = value
 
                 # Add ALL statement columns (prefixed with Statement_)
                 for col in statement_display_cols:
-                    row_data[f'Statement_{col}'] = stmt_row[col]
+                    value = stmt_row[col]
+                    # Convert ANY datetime-like value to string (comprehensive check)
+                    if pd.api.types.is_datetime64_any_dtype(type(value)):
+                        value = pd.Timestamp(value).strftime('%Y-%m-%d %H:%M:%S')
+                    elif isinstance(value, (pd.Timestamp, datetime, np.datetime64)):
+                        value = pd.Timestamp(value).strftime('%Y-%m-%d %H:%M:%S')
+                    elif pd.notna(value) and hasattr(value, 'strftime'):
+                        value = value.strftime('%Y-%m-%d %H:%M:%S')
+                    # Also check column names that contain 'date' - force string conversion
+                    elif 'date' in col.lower() and pd.notna(value):
+                        value = str(value)
+                    row_data[f'Statement_{col}'] = value
 
                 matched_data.append(row_data)
                 matched_ledger_indices.add(ledger_idx)
@@ -1658,6 +1695,12 @@ class FNBWorkflow:
                     workflow_name="fnb"
                 )
                 
+                # DEBUG: Show selection order
+                if selected_ledger:
+                    st.info(f"🔍 Ledger export order: {' → '.join(selected_ledger)}")
+                if selected_statement:
+                    st.info(f"🔍 Statement export order: {' → '.join(selected_statement)}")
+                
                 # Validate - at least one column must be selected
                 if not selected_ledger and not selected_statement:
                     st.error("❌ Please select at least one column to export")
@@ -1675,12 +1718,32 @@ class FNBWorkflow:
             for col in selected_statement:
                 master_columns.append(f'Statement_{col}')
             
-            # Helper function to align row data to master columns
+            # DEBUG: Show master column order
+            st.code(f"Master Column Order:\n{master_columns}")
+            st.info(f"💡 This is the exact order that will appear in your CSV export")
+            
+            # Helper function to align row data to master columns with proper formatting
             def align_to_master(row_dict):
-                """Align a row dictionary to master column structure"""
+                """Align a row dictionary to master column structure with date formatting"""
                 aligned_row = []
                 for col in master_columns:
-                    aligned_row.append(row_dict.get(col, ''))
+                    value = row_dict.get(col, '')
+                    # Format dates properly (convert timestamps to readable dates)
+                    if pd.notna(value) and ('Date' in col or 'date' in col):
+                        try:
+                            # Try to convert to datetime and format
+                            if isinstance(value, (int, float)):
+                                # Handle Excel serial dates or timestamps
+                                value = pd.to_datetime(value, unit='D', origin='1899-12-30', errors='ignore')
+                            value = pd.to_datetime(value, errors='ignore')
+                            if isinstance(value, pd.Timestamp):
+                                value = value.strftime('%Y-%m-%d')
+                        except:
+                            pass  # Keep original value if conversion fails
+                    # Convert pandas NA/NaN to empty string
+                    if pd.isna(value):
+                        value = ''
+                    aligned_row.append(value)
                 return aligned_row
             
             # Create organized CSV with batch headers and separators (like GUI)

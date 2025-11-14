@@ -275,18 +275,8 @@ def show_main_app():
             # Fallback if get_backend_info() not available
             st.info("ℹ️ Authentication active")
         
-        # Navigation
-        st.markdown("### 📍 Navigation")
-        page = st.radio(
-            "Go to:",
-            ["🏠 Dashboard", "🔄 Workflows", "📊 Reconciliation", "📁 Data Management", "📈 Reports", "⚙️ Settings"],
-            label_visibility="collapsed"
-        )
-
         st.markdown("---")
         
-
-
         # Logout button
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.session.logout()
@@ -295,20 +285,8 @@ def show_main_app():
     # Load persistent data after authentication (lazy loading)
     load_persistent_data()
     
-    # Main content area with lazy imports
-    if page == "🏠 Dashboard":
-        from components.dashboard import Dashboard
-        Dashboard().render()
-    elif page == "🔄 Workflows":
-        show_workflows_page()
-    elif page == "📊 Reconciliation":
-        show_reconciliation_page()
-    elif page == "📁 Data Management":
-        show_data_management_page()
-    elif page == "📈 Reports":
-        show_reports_page()
-    elif page == "⚙️ Settings":
-        show_settings_page()
+    # Show workflows page directly
+    show_workflows_page()
 
 def show_workflows_page():
     """Specialized workflows page - Display all workflows"""
@@ -348,6 +326,7 @@ def show_reconciliation_page():
     # Lazy import heavy modules only when this page is accessed
     from utils.file_loader import load_uploaded_file, get_dataframe_info
     from components.data_editor import DataEditor
+    from components.ai_assistant import check_ai_status, render_ai_sidebar
 
     st.markdown("""
     <div class="gradient-header">
@@ -355,6 +334,9 @@ def show_reconciliation_page():
         <p>Advanced matching engine with fuzzy logic and AI-powered suggestions</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # AI Assistant Sidebar
+    render_ai_sidebar()
 
     # File upload section
     col1, col2 = st.columns(2)

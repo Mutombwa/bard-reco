@@ -205,8 +205,8 @@ class UltraFastFNBReconciler:
             # Index statement by amount (rounded to avoid float precision issues)
             for idx, row in statement.iterrows():
                 amt = row.get('_amount')
-                if pd.notna(amt):
-                    amt_key = round(amt, 2)
+                if pd.notna(amt) and amt is not None:
+                    amt_key = round(float(amt), 2)
                     if amt_key not in stmt_by_amount:
                         stmt_by_amount[amt_key] = []
                     stmt_by_amount[amt_key].append(idx)
@@ -219,8 +219,8 @@ class UltraFastFNBReconciler:
 
             # Get candidate statements by amount (ultra-fast filter)
             candidates = []
-            if match_amounts and pd.notna(l_amt):
-                amt_key = round(l_amt, 2)
+            if match_amounts and pd.notna(l_amt) and l_amt is not None:
+                amt_key = round(float(l_amt), 2)
                 candidates = stmt_by_amount.get(amt_key, [])
             else:
                 candidates = list(statement.index)
@@ -260,10 +260,10 @@ class UltraFastFNBReconciler:
 
                 # Amount check (exact match)
                 if match_amounts:
-                    if pd.isna(l_amt) or pd.isna(s_amt):
+                    if pd.isna(l_amt) or pd.isna(s_amt) or l_amt is None or s_amt is None:
                         amt_match = False
                     else:
-                        amt_match = (round(l_amt, 2) == round(s_amt, 2))
+                        amt_match = (round(float(l_amt), 2) == round(float(s_amt), 2))
 
                 # Perfect match requires ALL enabled criteria to match
                 if date_match and ref_match and amt_match:
@@ -305,8 +305,8 @@ class UltraFastFNBReconciler:
                 if idx in matched_statement:
                     continue
                 amt = row.get('_amount')
-                if pd.notna(amt):
-                    amt_key = round(amt, 2)
+                if pd.notna(amt) and amt is not None:
+                    amt_key = round(float(amt), 2)
                     if amt_key not in stmt_by_amount:
                         stmt_by_amount[amt_key] = []
                     stmt_by_amount[amt_key].append(idx)
@@ -322,8 +322,8 @@ class UltraFastFNBReconciler:
 
             # Get candidates by amount
             candidates = []
-            if match_amounts and pd.notna(l_amt):
-                amt_key = round(l_amt, 2)
+            if match_amounts and pd.notna(l_amt) and l_amt is not None:
+                amt_key = round(float(l_amt), 2)
                 candidates = stmt_by_amount.get(amt_key, [])
             else:
                 candidates = [idx for idx in statement.index if idx not in matched_statement]
@@ -356,9 +356,9 @@ class UltraFastFNBReconciler:
 
                 # Amount check
                 if match_amounts:
-                    if pd.isna(l_amt) or pd.isna(s_amt):
+                    if pd.isna(l_amt) or pd.isna(s_amt) or l_amt is None or s_amt is None:
                         continue
-                    if round(l_amt, 2) != round(s_amt, 2):
+                    if round(float(l_amt), 2) != round(float(s_amt), 2):
                         continue
 
                 # Reference fuzzy check
@@ -417,8 +417,8 @@ class UltraFastFNBReconciler:
             if idx in matched_ledger:
                 continue
             amt = row.get('_amount')
-            if pd.notna(amt) and abs(amt) > 10000:
-                amt_key = round(amt, 2)
+            if pd.notna(amt) and amt is not None and abs(float(amt)) > 10000:
+                amt_key = round(float(amt), 2)
                 if amt_key not in ledger_by_amount:
                     ledger_by_amount[amt_key] = []
                 ledger_by_amount[amt_key].append(idx)
@@ -582,7 +582,7 @@ class UltraFastFNBReconciler:
 
             # Get candidates by date
             candidates = set()
-            if match_dates and pd.notna(s_date):
+            if match_dates and pd.notna(s_date) and s_date is not None:
                 candidates = set(ledger_by_date.get(s_date, []))
                 if date_tolerance:
                     # Add +/- 1 day
@@ -697,12 +697,12 @@ class UltraFastFNBReconciler:
 
             # Get candidates by date
             candidates = set()
-            if match_dates and pd.notna(l_date):
+            if match_dates and pd.notna(l_date) and l_date is not None:
                 for s_idx, s_row in statement.iterrows():
                     if s_idx in matched_statement:
                         continue
                     s_date = s_row.get('_date_norm')
-                    if pd.notna(s_date):
+                    if pd.notna(s_date) and s_date is not None:
                         diff_days = abs((l_date - s_date).days)
                         if date_tolerance:
                             if diff_days <= 1:
