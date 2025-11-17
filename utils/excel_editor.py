@@ -458,32 +458,42 @@ class ExcelEditor:
                     # Handle parentheses as negative (accounting format)
                     is_negative = cleaned_values.str.contains(r'^\(.*\)$', regex=True, na=False)
 
-                    # Remove formatting characters
-                    cleaned_values = cleaned_values.str.replace(r'[\$€£R,\s]', '', regex=True)
-                    cleaned_values = cleaned_values.str.replace(r'[()]', '', regex=True)
+                    # Remove formatting characters but preserve the number
+                    # Remove currency symbols and thousand separators
+                    cleaned_values = cleaned_values.str.replace(r'[\$€£R]', '', regex=True)  # Currency symbols
+                    cleaned_values = cleaned_values.str.replace(r',', '', regex=False)  # Thousand separators
+                    cleaned_values = cleaned_values.str.replace(r'[()]', '', regex=True)  # Parentheses
+                    cleaned_values = cleaned_values.str.strip()  # Strip again after removals
 
-                    # Handle empty strings
-                    cleaned_values = cleaned_values.replace('', '0')
-                    cleaned_values = cleaned_values.replace('nan', '0')
+                    # Replace common empty/null representations with empty string (not '0')
+                    # This preserves truly empty cells vs cells with zero
+                    cleaned_values = cleaned_values.replace('nan', '')
+                    cleaned_values = cleaned_values.replace('None', '')
+                    cleaned_values = cleaned_values.replace('NaN', '')
+                    cleaned_values = cleaned_values.replace('', '')  # Keep empty as empty
 
-                    # Convert to numeric
+                    # Convert to numeric - empty strings will become NaN, not 0
                     numeric_values = pd.to_numeric(cleaned_values, errors='coerce')
 
-                    # Apply negative sign for parentheses
+                    # Apply negative sign for parentheses (accounting format)
                     numeric_values = numeric_values.where(~is_negative, -numeric_values)
 
-                    # Maintain integer type if original was integer
+                    # Store the numeric values (keep NaN for empty cells)
+                    # Don't auto-fill with 0 - let users see what's actually empty
                     if 'int' in original_dtype:
-                        pasted_df[col] = numeric_values.fillna(0).astype('int64')
+                        # For integers, only fillna(0) if ALL values were originally empty
+                        # Otherwise, keep NaN to show missing data
+                        pasted_df[col] = numeric_values
                     else:
                         pasted_df[col] = numeric_values
 
-                    # Report conversion issues (excluding intentional empty/zero values)
+                    # Report conversion issues (excluding intentional empty values)
                     non_empty_original = original_values.astype(str).str.strip()
-                    non_empty_original = non_empty_original[~non_empty_original.isin(['', 'nan', 'None', '0'])]
-                    failed_count = numeric_values[non_empty_original.index].isna().sum()
-                    if failed_count > 0:
-                        conversion_errors.append(f"⚠️ {failed_count} value(s) in '{col}' could not be converted to number")
+                    non_empty_original = non_empty_original[~non_empty_original.isin(['', 'nan', 'None', 'NaN'])]
+                    if len(non_empty_original) > 0:
+                        failed_count = numeric_values[non_empty_original.index].isna().sum()
+                        if failed_count > 0:
+                            conversion_errors.append(f"⚠️ {failed_count} value(s) in '{col}' could not be converted to number")
 
                 # Handle text columns - preserve as-is but convert to string
                 else:

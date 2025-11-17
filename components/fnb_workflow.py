@@ -449,7 +449,6 @@ class FNBWorkflow:
                     del st.session_state.fnb_saved_selections
 
                 st.success("✅ Nedbank processing complete - Added Processed_Ref column")
-                st.rerun()
             else:
                 st.info("Statement format not recognized for Nedbank processing")
 
@@ -516,7 +515,6 @@ class FNBWorkflow:
 
             st.success("✅ Added RJ-Number and Payment Ref columns to ledger")
             st.dataframe(ledger[['RJ-Number', 'Payment Ref']].head(10), use_container_width=True)
-            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Error generating RJ & Payment Ref: {str(e)}")
@@ -741,6 +739,7 @@ class FNBWorkflow:
         with col2:
             if st.button("🔄 Reset", use_container_width=True, key="fnb_reset"):
                 st.session_state.fnb_results = None
+                # Keep st.rerun() for explicit reset action
                 st.rerun()
 
         with col3:
@@ -748,6 +747,7 @@ class FNBWorkflow:
                 st.session_state.fnb_ledger = None
                 st.session_state.fnb_statement = None
                 st.session_state.fnb_results = None
+                # Keep st.rerun() for explicit clear action
                 st.rerun()
 
     def run_reconciliation(self):
@@ -1363,43 +1363,36 @@ class FNBWorkflow:
                         type="primary" if st.session_state.fnb_selected_category == 'matched' else "secondary",
                         key='btn_matched'):
                 st.session_state.fnb_selected_category = 'matched'
-                st.rerun()
             if st.button("🔀 Split Transactions", use_container_width=True,
                         type="primary" if st.session_state.fnb_selected_category == 'split' else "secondary",
                         key='btn_split'):
                 st.session_state.fnb_selected_category = 'split'
-                st.rerun()
 
         with col2:
             if st.button("📊 All Transactions", use_container_width=True,
                         type="primary" if st.session_state.fnb_selected_category == 'all' else "secondary",
                         key='btn_all'):
                 st.session_state.fnb_selected_category = 'all'
-                st.rerun()
             if st.button("💜 Balanced By Fuzzy", use_container_width=True,
                         type="primary" if st.session_state.fnb_selected_category == 'fuzzy' else "secondary",
                         key='btn_fuzzy'):
                 st.session_state.fnb_selected_category = 'fuzzy'
-                st.rerun()
 
         with col3:
             if st.button("❌ Unmatched Ledger", use_container_width=True,
                         type="primary" if st.session_state.fnb_selected_category == 'unmatched_ledger' else "secondary",
                         key='btn_unmatched_ledger'):
                 st.session_state.fnb_selected_category = 'unmatched_ledger'
-                st.rerun()
             if st.button("💎 Foreign Credits", use_container_width=True,
                         type="primary" if st.session_state.fnb_selected_category == 'foreign' else "secondary",
                         key='btn_foreign'):
                 st.session_state.fnb_selected_category = 'foreign'
-                st.rerun()
 
         with col4:
             if st.button("⚠️ Unmatched Statement", use_container_width=True,
                         type="primary" if st.session_state.fnb_selected_category == 'unmatched_statement' else "secondary",
                         key='btn_unmatched_stmt'):
                 st.session_state.fnb_selected_category = 'unmatched_statement'
-                st.rerun()
 
         # Display selected category
         st.markdown("---")
@@ -1418,6 +1411,7 @@ class FNBWorkflow:
         with col3:
             if st.button("↻ Refresh", use_container_width=True, key='refresh_btn'):
                 self.log_audit_trail("REFRESH_DATA", {})
+                # Keep st.rerun() for explicit user refresh action
                 st.rerun()
         with col4:
             if st.button("📋 Audit Log", use_container_width=True, key='audit_btn'):
@@ -1657,7 +1651,6 @@ class FNBWorkflow:
             if not st.session_state.fnb_export_mode:
                 if st.button("📊 Export All to Excel", type="primary", use_container_width=True, key="fnb_export_excel"):
                     st.session_state.fnb_export_mode = True
-                    st.rerun()
         
         # Show export UI when in export mode (outside columns)
         if st.session_state.get('fnb_export_mode', False):
@@ -1686,7 +1679,6 @@ class FNBWorkflow:
             with col1:
                 if st.button("❌ Cancel", key="fnb_cancel_export"):
                     st.session_state.fnb_export_mode = False
-                    st.rerun()
             
             with st.expander("📋 Select Columns to Include in Export", expanded=True):
                 selected_ledger, selected_statement = ColumnSelector.render_column_selector(
@@ -1717,10 +1709,6 @@ class FNBWorkflow:
             master_columns.extend(['', ' '])  # 2 empty separator columns
             for col in selected_statement:
                 master_columns.append(f'Statement_{col}')
-            
-            # DEBUG: Show master column order
-            st.code(f"Master Column Order:\n{master_columns}")
-            st.info(f"💡 This is the exact order that will appear in your CSV export")
             
             # Helper function to align row data to master columns with proper formatting
             def align_to_master(row_dict):

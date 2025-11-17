@@ -57,12 +57,10 @@ class ColumnSelector:
                         st.session_state[f'{workflow_name}_selection_counter'] += 1
                         selection_dict[col] = st.session_state[f'{workflow_name}_selection_counter']
                 st.session_state[f'{workflow_name}_ledger_selection_dict'] = selection_dict
-                st.rerun()
         
         with btn_col2:
             if st.button("❌ Deselect All Ledger", use_container_width=True, key=f"{workflow_name}_deselect_all_ledger"):
                 st.session_state[f'{workflow_name}_ledger_selection_dict'] = {}
-                st.rerun()
         
         with btn_col3:
             if st.button("✅ Select All Statement", use_container_width=True, key=f"{workflow_name}_select_all_statement"):
@@ -73,19 +71,16 @@ class ColumnSelector:
                         st.session_state[f'{workflow_name}_selection_counter'] += 1
                         selection_dict[col] = st.session_state[f'{workflow_name}_selection_counter']
                 st.session_state[f'{workflow_name}_statement_selection_dict'] = selection_dict
-                st.rerun()
         
         with btn_col4:
             if st.button("❌ Deselect All Statement", use_container_width=True, key=f"{workflow_name}_deselect_all_statement"):
                 st.session_state[f'{workflow_name}_statement_selection_dict'] = {}
-                st.rerun()
         
         with btn_col5:
             if st.button("🔄 Reset All", use_container_width=True, key=f"{workflow_name}_reset_all_selections"):
                 st.session_state[f'{workflow_name}_ledger_selection_dict'] = {}
                 st.session_state[f'{workflow_name}_statement_selection_dict'] = {}
                 st.session_state[f'{workflow_name}_selection_counter'] = 0
-                st.rerun()
         
         st.markdown("---")
         col1, col2 = st.columns(2)
