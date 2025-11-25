@@ -379,8 +379,9 @@ class ABSAWorkflow:
                                 reference = digital_match.group(1).strip()
                             else:
                                 # Try pattern 4: DEPOSIT NO
-                                # Matches: "DEPOSIT NO : linda"
-                                ref_pattern = r'DEPOSIT\s+NO\s*:\s*([a-zA-Z0-9]+)'
+                                # Matches: "DEPOSIT NO : linda" or "DEPOSIT NO : nama twin"
+                                # Pattern captures multiple words until CONTACT or end
+                                ref_pattern = r'DEPOSIT\s+NO\s*:\s*([a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*?)(?:\s+CONTACT\s*:|$)'
                                 ref_match = re.search(ref_pattern, desc, re.IGNORECASE)
                                 
                                 if ref_match:
