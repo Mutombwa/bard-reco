@@ -353,52 +353,61 @@ class ABSAWorkflow:
                     reference = ""
                 else:
                     # Try pattern 1: PayShap Ext Credit followed by name
-                    # Matches: "PayShap Ext Credit K KWIYO", "PayShap Ext Credit P NCUBE", "PayShap Ext Credit S MOYO"
-                    # Pattern: Captures first letter + space + word (e.g., "K KWIYO")
-                    payshap_pattern = r'PayShap\s+Ext\s+Credit\s+([A-Z]\s+[A-Za-z]+)'
+                    # Matches: "PayShap Ext Credit Nomatemba", "PayShap Ext Credit K KWIYO", "PayShap Ext Credit P NCUBE"
+                    # Pattern: Captures any name after PayShap Ext Credit
+                    payshap_pattern = r'PayShap\s+Ext\s+Credit\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)'
                     payshap_match = re.search(payshap_pattern, desc, re.IGNORECASE)
                     
                     if payshap_match:
-                        reference = payshap_match.group(1).strip().upper()
+                        reference = payshap_match.group(1).strip()
                     else:
-                        # Try pattern 2: ACB CREDIT CAPITEC followed by name
-                        # Matches: "ACB CREDIT CAPITEC K KWIYO"
-                        # Pattern: Captures first letter + space + word (e.g., "K KWIYO")
-                        acb_pattern = r'ACB\s+CREDIT\s+(?:CAPITEC?|CAPITE[C]?)\s+([A-Z]\s+[A-Za-z]+)'
-                        acb_match = re.search(acb_pattern, desc, re.IGNORECASE)
+                        # Try pattern 2: IMMEDIATE TRF CR FIRSTRAND followed by name
+                        # Matches: "IMMEDIATE TRF CR FIRSTRAND Mehluli Nkomo 05LBW8SRGP"
+                        # Pattern: Captures name until 10-char alphanumeric code or end
+                        immediate_pattern = r'IMMEDIATE\s+TRF\s+CR\s+FIRSTRAND\s+([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+[A-Z0-9]{10}|$)'
+                        immediate_match = re.search(immediate_pattern, desc, re.IGNORECASE)
                         
-                        if acb_match:
-                            reference = acb_match.group(1).strip().upper()
+                        if immediate_match:
+                            reference = immediate_match.group(1).strip()
                         else:
-                            # Try pattern 3: DIGITAL PAYMENT CR ABSA BANK followed by name
-                            # Matches: "DIGITAL PAYMENT CR ABSA BANK Dumi"
-                            digital_pattern = r'DIGITAL\s+PAYMENT\s+CR\s+ABSA\s+BANK\s+([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)'
-                            digital_match = re.search(digital_pattern, desc, re.IGNORECASE)
+                            # Try pattern 3: ACB CREDIT CAPITEC followed by name
+                            # Matches: "ACB CREDIT CAPITEC K KWIYO"
+                            # Pattern: Captures first letter + space + word (e.g., "K KWIYO")
+                            acb_pattern = r'ACB\s+CREDIT\s+(?:CAPITEC?|CAPITE[C]?)\s+([A-Z]\s+[A-Za-z]+)'
+                            acb_match = re.search(acb_pattern, desc, re.IGNORECASE)
                             
-                            if digital_match:
-                                reference = digital_match.group(1).strip()
+                            if acb_match:
+                                reference = acb_match.group(1).strip().upper()
                             else:
-                                # Try pattern 4: DEPOSIT NO
-                                # Matches: "DEPOSIT NO : linda" or "DEPOSIT NO : nama twin"
-                                # Pattern captures multiple words until CONTACT or end
-                                ref_pattern = r'DEPOSIT\s+NO\s*:\s*([a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*?)(?:\s+CONTACT\s*:|$)'
-                                ref_match = re.search(ref_pattern, desc, re.IGNORECASE)
+                                # Try pattern 5: DIGITAL PAYMENT CR ABSA BANK followed by name
+                                # Matches: "DIGITAL PAYMENT CR ABSA BANK Dumi"
+                                digital_pattern = r'DIGITAL\s+PAYMENT\s+CR\s+ABSA\s+BANK\s+([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)'
+                                digital_match = re.search(digital_pattern, desc, re.IGNORECASE)
                                 
-                                if ref_match:
-                                    reference = ref_match.group(1).strip()
+                                if digital_match:
+                                    reference = digital_match.group(1).strip()
                                 else:
-                                    # Try pattern 5: ABSA BANK followed by name
-                                    absa_pattern = r'ABSA\s+BANK\s+([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)'
-                                    absa_match = re.search(absa_pattern, desc, re.IGNORECASE)
+                                    # Try pattern 7: DEPOSIT NO
+                                    # Matches: "DEPOSIT NO : linda" or "DEPOSIT NO : nama twin"
+                                    # Pattern captures multiple words until CONTACT or end
+                                    ref_pattern = r'DEPOSIT\s+NO\s*:\s*([a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*?)(?:\s+CONTACT\s*:|$)'
+                                    ref_match = re.search(ref_pattern, desc, re.IGNORECASE)
                                     
-                                    if absa_match:
-                                        reference = absa_match.group(1).strip()
+                                    if ref_match:
+                                        reference = ref_match.group(1).strip()
                                     else:
-                                        # Fallback: try CONTACT pattern
-                                        contact_pattern = r'CONTACT\s*:\s*(\d+)'
-                                        contact_match = re.search(contact_pattern, desc, re.IGNORECASE)
-                                        if contact_match:
-                                            reference = contact_match.group(1).strip()
+                                        # Try pattern 9: ABSA BANK followed by name
+                                        absa_pattern = r'ABSA\s+BANK\s+([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)'
+                                        absa_match = re.search(absa_pattern, desc, re.IGNORECASE)
+                                        
+                                        if absa_match:
+                                            reference = absa_match.group(1).strip()
+                                        else:
+                                            # Fallback: try CONTACT pattern
+                                            contact_pattern = r'CONTACT\s*:\s*(\d+)'
+                                            contact_match = re.search(contact_pattern, desc, re.IGNORECASE)
+                                            if contact_match:
+                                                reference = contact_match.group(1).strip()
                 
                 return reference, fee
 
