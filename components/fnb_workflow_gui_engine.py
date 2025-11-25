@@ -66,18 +66,41 @@ class GUIReconciliationEngine:
         amt_ledger_credit = settings.get('ledger_credit_col', 'Credit')
         amt_statement = settings.get('statement_amt_col', 'Amount')
 
-        # Clean date columns - convert to datetime if they're strings
-        if date_ledger in ledger.columns and ledger[date_ledger].dtype == 'object':
+        # Store original date format and create normalized version for comparison
+        # Original dates stay as-is, normalized dates are used only for matching logic
+        if date_ledger in ledger.columns:
+            # Keep original as-is (don't convert)
+            ledger[f'_original_{date_ledger}'] = ledger[date_ledger].astype(str)
+            # Create normalized version for comparison - handle YYYYMMDD format (ABSA)
             try:
-                ledger[date_ledger] = pd.to_datetime(ledger[date_ledger], errors='coerce')
+                # Try YYYYMMDD format first (e.g., 20251118)
+                ledger[f'_normalized_{date_ledger}'] = pd.to_datetime(
+                    ledger[date_ledger].astype(str), 
+                    format='%Y%m%d', 
+                    errors='coerce'
+                )
+                # If all NaT (failed), try general parsing
+                if ledger[f'_normalized_{date_ledger}'].isna().all():
+                    ledger[f'_normalized_{date_ledger}'] = pd.to_datetime(ledger[date_ledger], errors='coerce')
             except:
-                pass
+                ledger[f'_normalized_{date_ledger}'] = pd.to_datetime(ledger[date_ledger], errors='coerce')
 
-        if date_statement in statement.columns and statement[date_statement].dtype == 'object':
+        if date_statement in statement.columns:
+            # Keep original as-is (don't convert)
+            statement[f'_original_{date_statement}'] = statement[date_statement].astype(str)
+            # Create normalized version for comparison - handle YYYYMMDD format (ABSA)
             try:
-                statement[date_statement] = pd.to_datetime(statement[date_statement], errors='coerce')
+                # Try YYYYMMDD format first (e.g., 20251118)
+                statement[f'_normalized_{date_statement}'] = pd.to_datetime(
+                    statement[date_statement].astype(str), 
+                    format='%Y%m%d', 
+                    errors='coerce'
+                )
+                # If all NaT (failed), try general parsing
+                if statement[f'_normalized_{date_statement}'].isna().all():
+                    statement[f'_normalized_{date_statement}'] = pd.to_datetime(statement[date_statement], errors='coerce')
             except:
-                pass
+                statement[f'_normalized_{date_statement}'] = pd.to_datetime(statement[date_statement], errors='coerce')
 
         # Clean reference columns - ensure they're strings
         if ref_ledger in ledger.columns:
@@ -176,6 +199,10 @@ class GUIReconciliationEngine:
         # Make copies
         ledger = ledger_df.copy()
         statement = statement_df.copy()
+        
+        # Use normalized date columns for comparison if they exist (keep originals for display)
+        date_ledger_cmp = f'_normalized_{date_ledger}' if f'_normalized_{date_ledger}' in ledger.columns else date_ledger
+        date_statement_cmp = f'_normalized_{date_statement}' if f'_normalized_{date_statement}' in statement.columns else date_statement
 
         status_text.text("🚀 Optimizing data structures...")
         progress_bar.progress(0.05)
@@ -189,7 +216,7 @@ class GUIReconciliationEngine:
         matched_rows, ledger_matched, unmatched_statement = self._phase1_regular_matching(
             ledger, statement, settings,
             match_dates, match_references, match_amounts, fuzzy_ref, similarity_ref,
-            date_ledger, date_statement, ref_ledger, ref_statement,
+            date_ledger_cmp, date_statement_cmp, ref_ledger, ref_statement,
             amt_ledger_debit, amt_ledger_credit, amt_statement,
             use_debits_only, use_credits_only, use_both_debit_credit
         )
@@ -204,7 +231,7 @@ class GUIReconciliationEngine:
 
         foreign_credits_matches, foreign_matched_stmt, foreign_matched_ledger = self._phase15_foreign_credits(
             ledger, statement, ledger_matched, unmatched_statement, settings,
-            match_dates, date_ledger, date_statement,
+            match_dates, date_ledger_cmp, date_statement_cmp,
             amt_ledger_debit, amt_ledger_credit, amt_statement,
             use_debits_only, use_credits_only, use_both_debit_credit
         )
@@ -221,7 +248,7 @@ class GUIReconciliationEngine:
             ledger, statement, ledger_matched, foreign_matched_ledger,
             unmatched_statement, foreign_matched_stmt, settings,
             match_dates, match_references, fuzzy_ref, similarity_ref,
-            date_ledger, date_statement, ref_ledger, ref_statement,
+            date_ledger_cmp, date_statement_cmp, ref_ledger, ref_statement,
             amt_ledger_debit, amt_ledger_credit, amt_statement,
             use_debits_only, use_credits_only, use_both_debit_credit,
             progress_bar, status_text
@@ -247,7 +274,7 @@ class GUIReconciliationEngine:
             ledger, statement, ledger_matched, foreign_matched_ledger, split_matched_ledger,
             unmatched_statement, foreign_matched_stmt, split_matched_stmt, settings,
             match_dates, match_references, fuzzy_ref, similarity_ref,
-            date_ledger, date_statement, ref_ledger, ref_statement,
+            date_ledger_cmp, date_statement_cmp, ref_ledger, ref_statement,
             amt_ledger_debit, amt_ledger_credit, amt_statement,
             use_debits_only, use_credits_only, use_both_debit_credit,
             progress_bar, status_text
@@ -1472,6 +1499,15 @@ class GUIReconciliationEngine:
                     [idx for idx in split_matched_stmt if idx in unmatched_statement_df.index]
                 )
 
+        # Clean up: Remove normalized columns and ensure original dates are shown
+        # Keep _original_ columns for export but remove _normalized_ columns from display
+        for df in [matched_df, unmatched_ledger_df, unmatched_statement_df]:
+            if not df.empty:
+                # Remove normalized date columns (used only for comparison)
+                normalized_cols = [col for col in df.columns if col.startswith('_normalized_')]
+                if normalized_cols:
+                    df.drop(columns=normalized_cols, inplace=True, errors='ignore')
+        
         # Calculate statistics for dashboard
         perfect_count = len(matched_df[matched_df['Match_Type'] == 'Perfect']) if len(matched_df) > 0 else 0
         fuzzy_count = len(matched_df[matched_df['Match_Type'] == 'Fuzzy']) if len(matched_df) > 0 else 0

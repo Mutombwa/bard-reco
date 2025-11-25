@@ -933,24 +933,24 @@ class ABSAWorkflow:
             for col in selected_statement:
                 master_columns.append(f'Statement_{col}')
             
-            # Helper function to align row data to master columns with proper formatting
+            # Helper function to align row data to master columns preserving original dates
             def align_to_master(row_dict):
-                """Align a row dictionary to master column structure with date formatting"""
+                """Align a row dictionary to master column structure preserving original date format"""
                 aligned_row = []
                 for col in master_columns:
                     value = row_dict.get(col, '')
-                    # Format dates properly (convert timestamps to readable dates)
-                    if pd.notna(value) and ('Date' in col or 'date' in col):
-                        try:
-                            # Try to convert to datetime and format
-                            if isinstance(value, (int, float)):
-                                # Handle Excel serial dates or timestamps
-                                value = pd.to_datetime(value, unit='D', origin='1899-12-30', errors='ignore')
-                            value = pd.to_datetime(value, errors='ignore')
-                            if isinstance(value, pd.Timestamp):
-                                value = value.strftime('%Y-%m-%d')
-                        except:
-                            pass  # Keep original value if conversion fails
+                    
+                    # Check if this is a date column and preserve original format
+                    if 'Date' in col or 'date' in col:
+                        # Try to get original date value (stored before conversion)
+                        original_col = col.replace('Ledger_', '').replace('Statement_', '')
+                        original_key = f'_original_{original_col}'
+                        
+                        # Check if original value exists in row_dict
+                        if original_key in row_dict and pd.notna(row_dict[original_key]):
+                            value = row_dict[original_key]
+                        # If not in row_dict, keep the value as-is without conversion
+                    
                     # Convert pandas NA/NaN to empty string
                     if pd.isna(value):
                         value = ''

@@ -43,6 +43,7 @@ def normalize_dataframe_types(df: pd.DataFrame) -> pd.DataFrame:
     Normalize DataFrame column types to prevent Arrow serialization errors.
 
     This fixes the issue where mixed types cause conversion failures.
+    IMPORTANT: Date columns are preserved in their original format and NOT converted.
     """
     df = df.copy()
 
@@ -55,22 +56,24 @@ def normalize_dataframe_types(df: pd.DataFrame) -> pd.DataFrame:
 
         # Handle object dtype columns
         if df[col].dtype == 'object':
-            # Try datetime conversion first
-            try:
-                converted = pd.to_datetime(df[col], errors='coerce')
-                # Only convert if at least 50% of non-null values are valid dates
-                non_null_count = df[col].notna().sum()
-                valid_dates = converted.notna().sum()
-
-                if non_null_count > 0 and (valid_dates / non_null_count) >= 0.5:
-                    df[col] = converted
+            # SKIP datetime conversion - preserve original date format
+            # This ensures dates remain exactly as imported without any conversion
+            # Special handling: dates like 20251118 (YYYYMMDD) should stay as strings
+            
+            # Check if this column contains YYYYMMDD format dates (8-digit numbers)
+            # These are common in ABSA statements
+            sample = df[col].dropna().head(100).astype(str).str.strip()
+            if len(sample) > 0:
+                # Pattern for YYYYMMDD: exactly 8 digits starting with 19xx or 20xx
+                yyyymmdd_pattern = sample.str.match(r'^(19|20)\d{6}$')
+                if yyyymmdd_pattern.sum() / len(sample) >= 0.5:
+                    # This looks like YYYYMMDD dates - keep as string, don't convert to number
+                    df[col] = df[col].astype(str).replace('nan', '')
                     continue
-            except:
-                pass
 
-            # Try numeric conversion
+            # Try numeric conversion (but skip date-like columns)
             try:
-                # Check if it looks like numbers
+                # Check if it looks like numbers (but not dates)
                 sample = df[col].dropna().head(100)
                 if len(sample) > 0:
                     # Remove common number formatting
