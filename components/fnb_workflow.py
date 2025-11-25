@@ -485,7 +485,10 @@ class FNBWorkflow:
                 elif rj_match:
                     after = comment[rj_match.end():]
                     after = after.lstrip(' .:-#')
-                    payref = re.split(r'[.,\n\r]', after)[0].strip()
+                    # Don't split on dots to preserve names like "K.kwiyo"
+                    payref = re.split(r'[,\n\r]', after)[0].strip()
+                    # Clean up trailing dots/spaces
+                    payref = payref.rstrip('. ')
                 else:
                     # No RJ-Number found, use the whole comment as Payment Ref
                     payref = comment.strip()

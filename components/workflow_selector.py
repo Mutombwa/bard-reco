@@ -16,6 +16,11 @@ class WorkflowSelector:
                 'description': 'Bank reconciliation with FNB-specific matching logic',
                 'features': ['Date matching', 'Reference matching', 'Amount matching', 'Advanced filtering']
             },
+            'absa': {
+                'name': '🏦 ABSA Workflow',
+                'description': 'ABSA Bank reconciliation with auto Reference & Fee extraction',
+                'features': ['Auto extract Reference', 'Auto extract Fee', 'Date matching', 'Amount matching']
+            },
             'bidvest': {
                 'name': '🏢 Bidvest Workflow',
                 'description': 'Bidvest settlement reconciliation with batch processing',

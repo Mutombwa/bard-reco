@@ -292,6 +292,7 @@ def show_workflows_page():
     """Specialized workflows page - Display all workflows"""
 
     from components.fnb_workflow import FNBWorkflow
+    from components.absa_workflow import ABSAWorkflow
     from components.bidvest_workflow import BidvestWorkflow
     from components.corporate_workflow import CorporateWorkflow
 
@@ -303,7 +304,7 @@ def show_workflows_page():
     """, unsafe_allow_html=True)
 
     # Create tabs for each workflow
-    workflow_tabs = st.tabs(["🏦 FNB Workflow", "💼 Bidvest Workflow", "🏢 Corporate Workflow"])
+    workflow_tabs = st.tabs(["🏦 FNB Workflow", "🏦 ABSA Workflow", "💼 Bidvest Workflow", "🏢 Corporate Workflow"])
 
     with workflow_tabs[0]:
         st.markdown("### 🏦 FNB Bank Reconciliation")
@@ -311,11 +312,16 @@ def show_workflows_page():
         FNBWorkflow().render()
 
     with workflow_tabs[1]:
+        st.markdown("### 🏦 ABSA Bank Reconciliation")
+        st.markdown("---")
+        ABSAWorkflow().render()
+
+    with workflow_tabs[2]:
         st.markdown("### 💼 Bidvest Settlement Reconciliation")
         st.markdown("---")
         BidvestWorkflow().render()
 
-    with workflow_tabs[2]:
+    with workflow_tabs[3]:
         st.markdown("### 🏢 Corporate Settlement Reconciliation")
         st.markdown("---")
         CorporateWorkflow().render()
