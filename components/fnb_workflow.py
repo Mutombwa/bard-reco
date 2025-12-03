@@ -335,13 +335,19 @@ class FNBWorkflow:
                     # Phone number only (10 digits) - High priority
                     (r'^\d{10}$', lambda m: m.group(0)),
                     
+                    # FNB OB PMT [NAME] - FNB Online Banking Payment
+                    (r'FNB OB PMT\s+(.+)', lambda m: m.group(1).strip()),
+                    
                     # FNB APP PAYMENT FROM [NAME]
                     (r'FNB APP PAYMENT FROM\s+(.+)', lambda m: m.group(1).strip()),
 
-                    # ADT CASH DEPO variations - Extract phone/ref at the END
-                    (r'ADT CASH DEPO[A-Z\d]+\s+(\d{10})\s*$', lambda m: m.group(1)),  # DEPO + alphanumeric code + 10-digit phone
-                    (r'ADT CASH DEPO[A-Z\d]+\s+([A-Z]+)\s*$', lambda m: m.group(1)),  # DEPO + alphanumeric code + name  
-                    (r'ADT CASH DEPO00882112\s+(.+)', lambda m: m.group(1).strip()),
+                    # ADT CASH DEPO variations - Extract reference after location code
+                    # Pattern: ADT CASH DEPO + 8-digit code + reference (e.g., ADT CASH DEPO00132202 S  M0Y0)
+                    (r'ADT CASH DEPO\d{8}\s+(.+)', lambda m: m.group(1).strip()),
+                    # Pattern: ADT CASH DEPO + location name + reference (e.g., ADT CASH DEPOHORZNVIL NOZIPHO THEBE)
+                    (r'ADT CASH DEPO[A-Z]{6,10}\s+(.+)', lambda m: m.group(1).strip()),
+                    # Pattern: ADT CASH DEPO + mixed code + reference (e.g., ADT CASH DEPOMALLSOUT 1975)
+                    (r'ADT CASH DEPO[A-Z\d]{6,10}\s+(.+)', lambda m: m.group(1).strip()),
                     (r'ADT CASH DEPOSIT\s+(.+)', lambda m: m.group(1).strip()),
                     (r'ADT CASH DEPO\s+(.+)', lambda m: m.group(1).strip()),  # Generic fallback
 
@@ -357,6 +363,9 @@ class FNBWorkflow:
                     # Standard Bank [NAME]
                     (r'STANDARD BANK\s+(.+)', lambda m: m.group(1).strip()),
 
+                    # Direct names with numbers (e.g., "namthoko 2", "john 123")
+                    (r'^([a-zA-Z]+(?:\s+\d+)?)\s*$', lambda m: m.group(1).strip()),
+                    
                     # Direct names (capitalized words)
                     (r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[a-z]+)$', lambda m: m.group(1).strip()),
                 ]
