@@ -329,27 +329,45 @@ class FNBWorkflow:
             def extract_reference_name(description):
                 """Extract reference names from banking transaction descriptions"""
                 desc = str(description).strip()
+                
+                # Known location codes that should be stripped from names
+                location_codes = {'GAU', 'BAY', 'ST', 'STR', 'SB', 'SHOP', 'RD', 'RRD', 'PL', 'AVE', 'MAIN', 'PARK'}
+                
+                def strip_location_codes(text):
+                    """Remove leading location codes from a string"""
+                    words = text.split()
+                    while words and words[0].upper() in location_codes:
+                        words = words[1:]
+                    return ' '.join(words).strip() if words else text
 
                 # Pattern-based extraction for common transaction types
                 patterns = [
-                    # Phone number only (10 digits) - High priority
-                    (r'^\d{10}$', lambda m: m.group(0)),
+                    # Phone number only (9-10 digits) - High priority
+                    (r'^(\d{9,10})$', lambda m: m.group(1)),
+                    
+                    # Any number sequence (for references like 100319841, 1234, etc.)
+                    (r'^(\d+)$', lambda m: m.group(1)),
                     
                     # FNB OB PMT [NAME] - FNB Online Banking Payment
                     (r'FNB OB PMT\s+(.+)', lambda m: m.group(1).strip()),
                     
                     # FNB APP PAYMENT FROM [NAME]
                     (r'FNB APP PAYMENT FROM\s+(.+)', lambda m: m.group(1).strip()),
+                    
+                    # CELL PMNT FROM [NAME] - Cell phone payment
+                    (r'CELL PMNT FROM\s+(.+)', lambda m: m.group(1).strip()),
 
                     # ADT CASH DEPO variations - Extract reference after location code
-                    # Pattern: ADT CASH DEPO + 8-digit code + reference (e.g., ADT CASH DEPO00132202 S  M0Y0)
-                    (r'ADT CASH DEPO\d{8}\s+(.+)', lambda m: m.group(1).strip()),
-                    # Pattern: ADT CASH DEPO + location name + reference (e.g., ADT CASH DEPOHORZNVIL NOZIPHO THEBE)
-                    (r'ADT CASH DEPO[A-Z]{6,10}\s+(.+)', lambda m: m.group(1).strip()),
-                    # Pattern: ADT CASH DEPO + mixed code + reference (e.g., ADT CASH DEPOMALLSOUT 1975)
-                    (r'ADT CASH DEPO[A-Z\d]{6,10}\s+(.+)', lambda m: m.group(1).strip()),
-                    (r'ADT CASH DEPOSIT\s+(.+)', lambda m: m.group(1).strip()),
-                    (r'ADT CASH DEPO\s+(.+)', lambda m: m.group(1).strip()),  # Generic fallback
+                    # Pattern: ADT CASH DEPO + 8-digit code + reference
+                    (r'ADT CASH DEPO\d{8}\s+(.+)', lambda m: strip_location_codes(m.group(1))),
+                    # Pattern: ADT CASH DEPO + location (letters only) + multiple spaces + reference
+                    (r'ADT CASH DEPO([A-Z]+(?:\s+[A-Z]+)?)\s{2,}(.+)', lambda m: strip_location_codes(m.group(2))),
+                    # Pattern: ADT CASH DEPO + any letters + space + rest (use strip_location_codes)
+                    (r'ADT CASH DEPO[A-Z]{3,10}\s+(.+)', lambda m: strip_location_codes(m.group(1))),
+                    # Pattern: ADT CASH DEPO + mixed code + reference
+                    (r'ADT CASH DEPO[A-Z\d]{6,10}\s+(.+)', lambda m: strip_location_codes(m.group(1))),
+                    (r'ADT CASH DEPOSIT\s+(.+)', lambda m: strip_location_codes(m.group(1))),
+                    (r'ADT CASH DEPO\s+(.+)', lambda m: strip_location_codes(m.group(1))),  # Generic fallback
 
                     # CAPITEC [NAME]
                     (r'CAPITEC\s+(.+)', lambda m: m.group(1).strip()),
@@ -368,6 +386,9 @@ class FNBWorkflow:
                     
                     # Direct names (capitalized words)
                     (r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[a-z]+)$', lambda m: m.group(1).strip()),
+                    
+                    # Special characters + text (e.g., *Beds)
+                    (r'^([*#@]?[A-Za-z]+\d*)\s*$', lambda m: m.group(1).strip()),
                 ]
 
                 # Try each pattern
@@ -387,6 +408,38 @@ class FNBWorkflow:
                         except Exception:
                             continue
 
+                # Fallback: For ADT CASH DEPO, try to extract last word(s) as reference
+                if 'ADT CASH DEPO' in desc.upper():
+                    # Known location codes (short uppercase words that precede names)
+                    location_codes = {'GAU', 'BAY', 'ST', 'STR', 'SB', 'SHOP', 'RD', 'RRD', 'PL', 'AVE', 'MAIN', 'PARK', 'WEST', 'EAST', 'NORTH', 'SOUTH'}
+                    
+                    # Split and get everything after ADT CASH DEPO[LOCATION]
+                    parts = desc.split()
+                    
+                    # Find where ADT CASH DEPO ends (it's joined with first location code)
+                    for i, part in enumerate(parts):
+                        if 'DEPO' in part.upper() and part.upper().startswith('ADT') == False:
+                            # This part contains DEPO + maybe location (e.g., DEPOBAM, DEPOALEX)
+                            remaining = parts[i+1:]
+                            if remaining:
+                                # Skip known location codes at the start
+                                while remaining and remaining[0].upper() in location_codes:
+                                    remaining = remaining[1:]
+                                if remaining:
+                                    return ' '.join(remaining).strip()
+                            break
+                    
+                    # Alternative: try from the end - get the last proper name(s)
+                    # Skip common location-like words and get actual name
+                    for i in range(len(parts) - 1, -1, -1):
+                        word = parts[i].upper()
+                        if word not in location_codes and not word.startswith('ADT') and not word.startswith('CASH') and not 'DEPO' in word:
+                            # Found a name word, now grab consecutive name words
+                            name_start = i
+                            while name_start > 0 and parts[name_start - 1].upper() not in location_codes and not 'DEPO' in parts[name_start - 1].upper():
+                                name_start -= 1
+                            return ' '.join(parts[name_start:i+1]).strip()
+
                 # Fallback: extract capitalized words that look like names
                 words = desc.split()
                 name_words = []
@@ -397,6 +450,10 @@ class FNBWorkflow:
 
                 if name_words:
                     return ' '.join(name_words[-2:]) if len(name_words) >= 2 else name_words[-1]
+                
+                # Last resort: return the original if it looks like a simple reference
+                if len(desc) <= 20 and not ' ' in desc:
+                    return desc
 
                 return "UNKNOWN"
 
