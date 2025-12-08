@@ -607,7 +607,7 @@ class GUIReconciliationEngine:
             best_ledger_idx = None
             best_ledger_row = None
 
-            if match_references and stmt_ref:
+            if match_references and stmt_ref and stmt_ref.lower() != 'nan' and stmt_ref.strip() != '':
                 # Try exact match using index
                 if stmt_ref in ledger_by_ref:
                     exact_candidates = [idx for idx in ledger_by_ref[stmt_ref] if idx in candidate_indices]
@@ -620,14 +620,23 @@ class GUIReconciliationEngine:
                 if best_ledger_idx is None and fuzzy_ref and len(ledger_candidates) > 0:
                     for lidx, ledger_row in ledger_candidates.iterrows():
                         ledger_ref = str(ledger_row[ref_ledger]) if ref_ledger in ledger.columns else ""
+                        
+                        # Skip empty/invalid ledger references
+                        if not ledger_ref or ledger_ref.lower() == 'nan' or ledger_ref.strip() == '':
+                            continue
+                        
                         ref_score = self._get_fuzzy_score_cached(stmt_ref, ledger_ref)
 
                         if ref_score >= similarity_ref and ref_score > best_score:
                             best_score = ref_score
                             best_ledger_idx = lidx
                             best_ledger_row = ledger_row
+            elif match_references:
+                # LOOPHOLE FIX: If matching references is enabled but statement has no valid reference,
+                # DO NOT match - leave as unmatched. Same amount/date with no reference = no match.
+                pass  # best_ledger_idx stays None, will be added to unmatched_statement
             else:
-                # Not matching references, take first candidate
+                # Reference matching is disabled entirely - match by date/amount only
                 if len(ledger_candidates) > 0:
                     best_ledger_idx = ledger_candidates.index[0]
                     best_score = 100

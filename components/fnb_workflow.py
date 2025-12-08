@@ -1042,12 +1042,16 @@ class FNBWorkflow:
                 scores.append(date_score)
                 weights.append(0.3)
 
-        # Reference matching (40% weight)
+        # Reference matching (40% weight) - CRITICAL: If enabled, reference MUST meet threshold
         if settings.get('match_references', True):
             ref_score = self.calculate_reference_score(ledger_row, stmt_row, settings)
             if ref_score is not None:
                 scores.append(ref_score)
                 weights.append(0.4)
+            else:
+                # LOOPHOLE FIX: If reference matching is enabled but score is None 
+                # (below threshold or missing reference), reject the entire match
+                return 0.0
 
         # Amount matching (30% weight)
         if settings.get('match_amounts', True):
@@ -1108,10 +1112,12 @@ class FNBWorkflow:
                 if similarity >= min_similarity:
                     return similarity / 100.0
                 else:
-                    return 0.0
+                    # LOOPHOLE FIX: Return None instead of 0.0 for below-threshold matches
+                    # This excludes this pair from matching entirely, not just reducing the score
+                    return None
             else:
-                # Exact match only
-                return 1.0 if ledger_ref == stmt_ref else 0.0
+                # Exact match only - return None if not exact match (don't allow partial)
+                return 1.0 if ledger_ref == stmt_ref else None
 
         except Exception:
             return None
