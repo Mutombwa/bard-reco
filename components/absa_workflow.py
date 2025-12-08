@@ -250,13 +250,13 @@ class ABSAWorkflow:
         st.markdown("---")
         st.subheader("🛠️ Step 2: ABSA Data Processing Tools")
 
-        # Cache column lists
+        # Cache column lists - convert all column names to strings to avoid datetime objects
         if 'absa_ledger_cols_cache' not in st.session_state or st.session_state.get('absa_ledger_cols_dirty', True):
-            st.session_state.absa_ledger_cols_cache = list(st.session_state.absa_ledger.columns) if st.session_state.absa_ledger is not None else []
+            st.session_state.absa_ledger_cols_cache = [str(col) for col in st.session_state.absa_ledger.columns] if st.session_state.absa_ledger is not None else []
             st.session_state.absa_ledger_cols_dirty = False
 
         if 'absa_statement_cols_cache' not in st.session_state or st.session_state.get('absa_statement_cols_dirty', True):
-            st.session_state.absa_statement_cols_cache = list(st.session_state.absa_statement.columns) if st.session_state.absa_statement is not None else []
+            st.session_state.absa_statement_cols_cache = [str(col) for col in st.session_state.absa_statement.columns] if st.session_state.absa_statement is not None else []
             st.session_state.absa_statement_cols_dirty = False
 
         ledger_cols = st.session_state.absa_ledger_cols_cache

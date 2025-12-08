@@ -261,12 +261,13 @@ class FNBWorkflow:
         st.subheader("🛠️ Step 2: Data Processing Tools")
 
         # Cache column lists to avoid repeated DataFrame column access
+        # Convert all column names to strings to avoid datetime objects in headers
         if 'fnb_ledger_cols_cache' not in st.session_state or st.session_state.get('fnb_ledger_cols_dirty', True):
-            st.session_state.fnb_ledger_cols_cache = list(st.session_state.fnb_ledger.columns) if st.session_state.fnb_ledger is not None else []
+            st.session_state.fnb_ledger_cols_cache = [str(col) for col in st.session_state.fnb_ledger.columns] if st.session_state.fnb_ledger is not None else []
             st.session_state.fnb_ledger_cols_dirty = False
 
         if 'fnb_statement_cols_cache' not in st.session_state or st.session_state.get('fnb_statement_cols_dirty', True):
-            st.session_state.fnb_statement_cols_cache = list(st.session_state.fnb_statement.columns) if st.session_state.fnb_statement is not None else []
+            st.session_state.fnb_statement_cols_cache = [str(col) for col in st.session_state.fnb_statement.columns] if st.session_state.fnb_statement is not None else []
             st.session_state.fnb_statement_cols_dirty = False
 
         ledger_cols = st.session_state.fnb_ledger_cols_cache

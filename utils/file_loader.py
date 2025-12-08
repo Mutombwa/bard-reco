@@ -46,6 +46,9 @@ def normalize_dataframe_types(df: pd.DataFrame) -> pd.DataFrame:
     IMPORTANT: Date columns are preserved in their original format and NOT converted.
     """
     df = df.copy()
+    
+    # First, ensure all column names are strings (some Excel files have datetime column headers)
+    df.columns = [str(col) for col in df.columns]
 
     for col in df.columns:
         # Skip if already a proper numeric or datetime type
