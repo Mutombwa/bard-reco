@@ -21,6 +21,11 @@ class WorkflowSelector:
                 'description': 'ABSA Bank reconciliation with auto Reference & Fee extraction',
                 'features': ['Auto extract Reference', 'Auto extract Fee', 'Date matching', 'Amount matching']
             },
+            'kazang': {
+                'name': '💳 Kazang Workflow',
+                'description': 'Kazang reconciliation with Payment Ref extraction from Comment',
+                'features': ['Payment Ref extraction', 'RJ Number extraction', 'Date matching', 'Amount matching']
+            },
             'bidvest': {
                 'name': '🏢 Bidvest Workflow',
                 'description': 'Bidvest settlement reconciliation with batch processing',

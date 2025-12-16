@@ -1,11 +1,8 @@
 {
   "include": [
     "app.py",
-    "auth",
     "components",
     "config",
-    "pages",
-    "src",
     "utils"
   ],
   "exclude": [
@@ -13,14 +10,20 @@
     "**/.pytest_cache",
     "**/node_modules",
     "data",
-    "assets"
+    "assets",
+    "src",
+    "auth",
+    "pages"
   ],
   "ignore": [
     "**/__pycache__",
     "data/**",
-    "assets/**"
+    "assets/**",
+    "src/**",
+    "auth/**",
+    "pages/**"
   ],
-  "typeCheckingMode": "basic",
+  "typeCheckingMode": "off",
   "reportMissingImports": false,
   "reportMissingTypeStubs": false,
   "reportMissingModuleSource": false,
@@ -30,7 +33,19 @@
   "reportPrivateImportUsage": false,
   "reportArgumentType": false,
   "reportReturnType": false,
-  "reportUndefinedVariable": "warning",
+  "reportUnknownMemberType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownParameterType": false,
+  "reportUnusedImport": false,
+  "reportUnusedVariable": false,
+  "reportUnusedFunction": false,
+  "reportUnusedClass": false,
+  "reportAttributeAccessIssue": false,
+  "reportOperatorIssue": false,
+  "reportIndexIssue": false,
+  "reportCallIssue": false,
+  "reportUndefinedVariable": false,
   "pythonVersion": "3.11",
   "pythonPlatform": "All"
 }

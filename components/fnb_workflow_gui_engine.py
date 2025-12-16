@@ -1477,36 +1477,49 @@ class GUIReconciliationEngine:
 
         matched_df = pd.DataFrame(all_matched) if all_matched else pd.DataFrame()
 
-        # Unmatched
-        all_matched_ledger = ledger_matched.union(foreign_matched_ledger)
-        unmatched_ledger_df = ledger.drop(list(all_matched_ledger)) if all_matched_ledger else ledger
-
-        final_unmatched_stmt = [idx for idx in unmatched_statement if idx not in foreign_matched_stmt]
-        unmatched_statement_df = statement.loc[final_unmatched_stmt] if final_unmatched_stmt else pd.DataFrame()
-
-        # Remove split-matched items
+        # ============================================
+        # CALCULATE UNMATCHED - FIXED LOGIC
+        # ============================================
+        # Collect ALL matched statement indices from all phases
+        all_matched_stmt_indices = set()
+        
+        # From regular matches (Phase 1)
+        for match in matched_rows:
+            all_matched_stmt_indices.add(match['statement_idx'])
+        
+        # From foreign credits (Phase 1.5)
+        for match in foreign_credits_matches:
+            all_matched_stmt_indices.add(match['statement_idx'])
+        
+        # From split matches (Phase 2 & 2B)
         if split_matches:
-            split_matched_ledger = set()
-            split_matched_stmt = set()
             for split in split_matches:
                 split_type = split.get('split_type', 'many_to_one')
                 if split_type == 'many_to_one':
-                    # Multiple ledger -> one statement
-                    split_matched_ledger.update(split['ledger_indices'])
-                    split_matched_stmt.add(split['statement_idx'])
+                    all_matched_stmt_indices.add(split['statement_idx'])
                 elif split_type == 'one_to_many':
-                    # One ledger -> multiple statement
-                    split_matched_ledger.add(split['ledger_idx'])
-                    split_matched_stmt.update(split['statement_indices'])
-
-            if split_matched_ledger:
-                unmatched_ledger_df = unmatched_ledger_df.drop(
-                    [idx for idx in split_matched_ledger if idx in unmatched_ledger_df.index]
-                )
-            if split_matched_stmt:
-                unmatched_statement_df = unmatched_statement_df.drop(
-                    [idx for idx in split_matched_stmt if idx in unmatched_statement_df.index]
-                )
+                    all_matched_stmt_indices.update(split['statement_indices'])
+        
+        # Collect ALL matched ledger indices from all phases
+        all_matched_ledger_indices = set()
+        all_matched_ledger_indices.update(ledger_matched)
+        all_matched_ledger_indices.update(foreign_matched_ledger)
+        
+        if split_matches:
+            for split in split_matches:
+                split_type = split.get('split_type', 'many_to_one')
+                if split_type == 'many_to_one':
+                    all_matched_ledger_indices.update(split['ledger_indices'])
+                elif split_type == 'one_to_many':
+                    all_matched_ledger_indices.add(split['ledger_idx'])
+        
+        # UNMATCHED LEDGER: All ledger rows NOT in matched set
+        unmatched_ledger_indices = [idx for idx in ledger.index if idx not in all_matched_ledger_indices]
+        unmatched_ledger_df = ledger.loc[unmatched_ledger_indices].copy() if unmatched_ledger_indices else pd.DataFrame()
+        
+        # UNMATCHED STATEMENT: All statement rows NOT in matched set
+        unmatched_stmt_indices = [idx for idx in statement.index if idx not in all_matched_stmt_indices]
+        unmatched_statement_df = statement.loc[unmatched_stmt_indices].copy() if unmatched_stmt_indices else pd.DataFrame()
 
         # Clean up: Remove normalized columns and ensure original dates are shown
         # Keep _original_ columns for export but remove _normalized_ columns from display
