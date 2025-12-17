@@ -6,7 +6,7 @@
 [server]
 port = 8501
 headless = true
-enableCORS = false
+# enableCORS must be true when enableXsrfProtection is true
 enableXsrfProtection = true
 maxUploadSize = 200
 runOnSave = false
