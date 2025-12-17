@@ -352,11 +352,14 @@ class FixLedgerWorkflow:
 
         # Step 2: Create lookup dictionary from TX Report (O(1) lookups)
         # Handle potential duplicates by keeping first occurrence
+        # Also store full TX row data for side-by-side view
         tx_lookup = {}
+        tx_full_lookup = {}  # Store full row data for side-by-side
         for _, row in tx_df.iterrows():
             ref = str(row[trans_ref_col]).strip().upper() if pd.notna(row[trans_ref_col]) else ''
             if ref and ref not in tx_lookup:
                 tx_lookup[ref] = row[source_payment_col] if pd.notna(row[source_payment_col]) else ''
+                tx_full_lookup[ref] = row.to_dict()  # Store full row
 
         # Step 3: Map Source Payment Reference using lookup (vectorized)
         palladium_df['Source Payment Reference'] = palladium_df['TX_REF'].apply(
@@ -368,18 +371,53 @@ class FixLedgerWorkflow:
         has_match = palladium_df['Source Payment Reference'] != ''
 
         matched_df = palladium_df[has_ref & has_match].copy()
-        unmatched_df = palladium_df[has_ref & ~has_match].copy()
-        no_ref_df = palladium_df[~has_ref].copy()
+        unmatched_with_ref_df = palladium_df[has_ref & ~has_match].copy()  # Has ref but no match
+        no_ref_df = palladium_df[~has_ref].copy()  # No reference extracted
+
+        # Combine unmatched: both "has ref but no match" AND "no reference" go to unmatched
+        # Add a column to indicate why it's unmatched
+        unmatched_with_ref_df['Unmatched Reason'] = 'Reference not found in TX Report'
+        no_ref_df['Unmatched Reason'] = 'No reference in Comment'
+        all_unmatched_df = pd.concat([unmatched_with_ref_df, no_ref_df], ignore_index=True)
+
+        # Step 5: Create side-by-side matched view
+        # Palladium columns | 2 empty columns | TX Report columns
+        side_by_side_rows = []
+        tx_columns = list(tx_df.columns)
+
+        for _, prow in matched_df.iterrows():
+            tx_ref = prow['TX_REF'].upper() if prow['TX_REF'] else ''
+            tx_data = tx_full_lookup.get(tx_ref, {})
+
+            row_data = {}
+            # Add Palladium columns with prefix
+            for col in palladium_df.columns:
+                row_data[f'Palladium_{col}'] = prow[col]
+
+            # Add 2 separator columns
+            row_data['___'] = ''
+            row_data['____'] = ''
+
+            # Add TX Report columns with prefix
+            for col in tx_columns:
+                row_data[f'TX_{col}'] = tx_data.get(col, '')
+
+            side_by_side_rows.append(row_data)
+
+        side_by_side_df = pd.DataFrame(side_by_side_rows) if side_by_side_rows else pd.DataFrame()
 
         results = {
             'enriched_df': palladium_df,
             'matched_count': len(matched_df),
-            'unmatched_count': len(unmatched_df),
+            'unmatched_count': len(unmatched_with_ref_df),  # Original unmatched (with ref)
             'no_ref_count': len(no_ref_df),
+            'all_unmatched_count': len(all_unmatched_df),  # Combined unmatched
             'total_count': len(palladium_df),
             'matched_df': matched_df,
-            'unmatched_df': unmatched_df,
+            'unmatched_df': unmatched_with_ref_df,  # Keep original for backward compatibility
             'no_ref_df': no_ref_df,
+            'all_unmatched_df': all_unmatched_df,  # NEW: Combined unmatched
+            'side_by_side_df': side_by_side_df,  # NEW: Side by side view
             'tx_lookup_size': len(tx_lookup)
         }
 
@@ -447,9 +485,10 @@ class FixLedgerWorkflow:
                 f"**{results['no_ref_count']:,}** rows had no extractable reference")
 
         # Tabs for different views
-        tab1, tab2, tab3, tab4 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             f"✅ Matched ({results['matched_count']:,})",
-            f"❌ Unmatched ({results['unmatched_count']:,})",
+            f"🔀 Side-by-Side ({results['matched_count']:,})",
+            f"❌ All Unmatched ({results['all_unmatched_count']:,})",
             "📗 Full Enriched Ledger",
             "📥 Download"
         ])
@@ -469,20 +508,32 @@ class FixLedgerWorkflow:
                 st.warning("No matches found")
 
         with tab2:
-            if results['unmatched_count'] > 0:
-                st.markdown("**Unmatched Transactions** - TX_REF NOT found in TX Report")
-                display_cols = [comment_col, 'TX_REF']
-                other_cols = [c for c in results['unmatched_df'].columns if c not in display_cols + ['Source Payment Reference']]
-                display_df = results['unmatched_df'][display_cols + other_cols[:5]]
-                st.dataframe(display_df, use_container_width=True, height=400)
+            if not results['side_by_side_df'].empty:
+                st.markdown("**Side-by-Side View** - Palladium Ledger (green) | TX Report (blue)")
+                st.caption("Matched transactions shown with corresponding TX Report data")
+                st.dataframe(results['side_by_side_df'], use_container_width=True, height=400)
             else:
-                st.success("✅ All transactions with references were matched!")
+                st.warning("No matched transactions for side-by-side view")
 
         with tab3:
+            st.markdown("**All Unmatched Transactions** - Includes both 'No Match' and 'No Reference'")
+            if results['all_unmatched_count'] > 0:
+                # Show breakdown
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("🔍 Reference Not Found", results['unmatched_count'])
+                with col2:
+                    st.metric("📝 No Reference in Comment", results['no_ref_count'])
+
+                st.dataframe(results['all_unmatched_df'], use_container_width=True, height=400)
+            else:
+                st.success("✅ All transactions were matched!")
+
+        with tab4:
             st.markdown("**Complete Enriched Palladium Ledger** - All original columns + TX_REF + Source Payment Reference")
             st.dataframe(results['enriched_df'], use_container_width=True, height=400)
 
-        with tab4:
+        with tab5:
             self.render_download_section(results)
 
     def render_download_section(self, results):
@@ -528,14 +579,17 @@ class FixLedgerWorkflow:
             # Create multi-sheet Excel report
             report_output = io.BytesIO()
             with pd.ExcelWriter(report_output, engine='xlsxwriter') as writer:
+                workbook = writer.book
+
                 # Summary sheet
                 summary_data = {
-                    'Metric': ['Total Rows', 'Matched', 'Unmatched (with ref)', 'No Reference', 'Match Rate', 'Processing Time'],
+                    'Metric': ['Total Rows', 'Matched', 'Unmatched (with ref)', 'No Reference', 'Total Unmatched', 'Match Rate', 'Processing Time'],
                     'Value': [
                         results['total_count'],
                         results['matched_count'],
                         results['unmatched_count'],
                         results['no_ref_count'],
+                        results['all_unmatched_count'],
                         f"{(results['matched_count'] / max(results['matched_count'] + results['unmatched_count'], 1)) * 100:.1f}%",
                         f"{results['processing_time']:.2f}s"
                     ]
@@ -546,12 +600,44 @@ class FixLedgerWorkflow:
                 if not results['matched_df'].empty:
                     results['matched_df'].to_excel(writer, sheet_name='Matched', index=False)
 
-                # Unmatched sheet
-                if not results['unmatched_df'].empty:
-                    results['unmatched_df'].to_excel(writer, sheet_name='Unmatched', index=False)
+                # Side-by-Side Matched sheet (NEW)
+                if not results['side_by_side_df'].empty:
+                    results['side_by_side_df'].to_excel(writer, sheet_name='Matched Side-by-Side', index=False)
 
-                # Format worksheets
-                workbook = writer.book
+                    # Format the side-by-side sheet with colors
+                    worksheet = writer.sheets['Matched Side-by-Side']
+
+                    # Header formats
+                    palladium_header_format = workbook.add_format({
+                        'bold': True,
+                        'bg_color': '#E2EFDA',  # Light green
+                        'border': 1
+                    })
+                    tx_header_format = workbook.add_format({
+                        'bold': True,
+                        'bg_color': '#DDEBF7',  # Light blue
+                        'border': 1
+                    })
+                    separator_format = workbook.add_format({
+                        'bg_color': '#F2F2F2',  # Light gray
+                        'border': 0
+                    })
+
+                    # Apply header formatting
+                    for col_num, col_name in enumerate(results['side_by_side_df'].columns):
+                        if col_name.startswith('Palladium_'):
+                            worksheet.write(0, col_num, col_name, palladium_header_format)
+                        elif col_name.startswith('TX_'):
+                            worksheet.write(0, col_num, col_name, tx_header_format)
+                        else:  # Separator columns
+                            worksheet.write(0, col_num, '', separator_format)
+                            worksheet.set_column(col_num, col_num, 3)  # Narrow separator
+
+                # All Unmatched sheet (includes No Reference)
+                if not results['all_unmatched_df'].empty:
+                    results['all_unmatched_df'].to_excel(writer, sheet_name='Unmatched (All)', index=False)
+
+                # Format worksheets - auto-adjust column widths
                 for sheet_name in writer.sheets:
                     worksheet = writer.sheets[sheet_name]
                     worksheet.set_column('A:Z', 15)
