@@ -296,6 +296,7 @@ def show_workflows_page():
     from components.kazang_workflow import KazangWorkflow
     from components.bidvest_workflow import BidvestWorkflow
     from components.corporate_workflow import CorporateWorkflow
+    from components.fix_ledger_workflow import FixLedgerWorkflow
 
     st.markdown("""
     <div class="gradient-header">
@@ -305,7 +306,7 @@ def show_workflows_page():
     """, unsafe_allow_html=True)
 
     # Create tabs for each workflow
-    workflow_tabs = st.tabs(["🏦 FNB Workflow", "🏦 ABSA Workflow", "💳 Kazang Workflow", "💼 Bidvest Workflow", "🏢 Corporate Workflow"])
+    workflow_tabs = st.tabs(["🏦 FNB Workflow", "🏦 ABSA Workflow", "💳 Kazang Workflow", "💼 Bidvest Workflow", "🏢 Corporate Workflow", "🔧 Fix Ledger"])
 
     with workflow_tabs[0]:
         st.markdown("### 🏦 FNB Bank Reconciliation")
@@ -331,6 +332,11 @@ def show_workflows_page():
         st.markdown("### 🏢 Corporate Settlement Reconciliation")
         st.markdown("---")
         CorporateWorkflow().render()
+
+    with workflow_tabs[5]:
+        st.markdown("### 🔧 Fix Ledger - Enrich with TX Report")
+        st.markdown("---")
+        FixLedgerWorkflow().render()
 
 def show_reconciliation_page():
     """Reconciliation workflow page"""
