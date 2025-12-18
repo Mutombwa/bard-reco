@@ -814,14 +814,17 @@ class GUIReconciliationEngine:
             st.info(f"⚡ Skipped many-to-one split detection - Match rate {match_rate:.1f}% is very high")
             return split_matches
 
-        # PERFORMANCE: Skip if too many unmatched items (to prevent exponential complexity)
-        if len(remaining_statement) > 1000 or len(remaining_ledger) > 2000:
-            st.warning(f"⚠️ Large unmatched dataset ({len(remaining_ledger)} ledger, {len(remaining_statement)} statement)")
-            st.info(f"⚡ Skipping split detection for performance. Consider improving matching criteria.")
+        # PERFORMANCE: For very large unmatched datasets, use optimized approach or skip
+        # Increased thresholds: 5000 statement, 5000 ledger (was 1000/2000)
+        if len(remaining_statement) > 5000 or len(remaining_ledger) > 5000:
+            st.warning(f"⚠️ Very large unmatched dataset ({len(remaining_ledger)} ledger, {len(remaining_statement)} statement)")
+            st.info(f"⚡ Skipping split detection to prevent performance issues. Use filtering to reduce unmatched items.")
             return split_matches
 
-        # Skip if moderate size (performance optimization)
-        if len(remaining_statement) > 500 or len(remaining_ledger) > 1000:
+        # Info for moderate to large datasets
+        if len(remaining_statement) > 1000 or len(remaining_ledger) > 2000:
+            st.info(f"📊 Large dataset ({len(remaining_ledger)} ledger, {len(remaining_statement)} statement) - Split detection may take 30-60 seconds...")
+        elif len(remaining_statement) > 500 or len(remaining_ledger) > 1000:
             st.info(f"⚡ Moderate dataset ({len(remaining_ledger)} ledger, {len(remaining_statement)} statement) - Using optimized split detection")
 
         # Build split detection indexes

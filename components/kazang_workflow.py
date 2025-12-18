@@ -333,36 +333,47 @@ class KazangWorkflow:
             def extract_payment_ref_from_comment(comment):
                 """
                 Extract Payment Ref from Kazang comment format
-                
+
                 Examples:
                 - "Ref #RJ58822828410. - Gugu 6408370691" → "Gugu"
                 - "Ref #RJ58953541109. - Lucy6410281493" → "Lucy"
+                - "Ref CSH764074250 - (Phuthani mabhena)" → "Phuthani mabhena"
+                - "Ref CSH293299862 - (Mlamuli)" → "Mlamuli"
                 """
                 if not isinstance(comment, str):
                     return ''
-                
+
                 comment = comment.strip()
-                
-                # Pattern 1: Look for "- " followed by name
-                # Match: "- Name" where Name is letters (possibly with numbers attached)
-                pattern1 = r'\.\s*-\s*([A-Za-z]+)'
-                match1 = re.search(pattern1, comment)
-                if match1:
-                    return match1.group(1).strip()
-                
-                # Pattern 2: Alternative format without dot
-                # Match: "- Name" 
-                pattern2 = r'-\s+([A-Za-z]+)'
+
+                # Pattern 1: Parentheses format - "Ref CSH764074250 - (Phuthani mabhena)"
+                # But not if it's just the reference itself like "Reversal: (#Ref CSH767209773)"
+                paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
+                if paren_match:
+                    paren_content = paren_match.group(1).strip()
+                    # Only use if it doesn't look like a reference
+                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
+                        return paren_content
+
+                # Pattern 2: Look for "- " followed by name (with dot before)
+                # Match: ". - Name" where Name is letters (possibly with numbers attached)
+                pattern2 = r'\.\s*-\s*([A-Za-z]+)'
                 match2 = re.search(pattern2, comment)
                 if match2:
                     return match2.group(1).strip()
-                
-                # Pattern 3: If there's text after RJ number, try to extract name
-                pattern3 = r'#?RJ\d+\.?\s*-?\s*([A-Za-z]+)'
-                match3 = re.search(pattern3, comment, re.IGNORECASE)
+
+                # Pattern 3: Alternative format without dot
+                # Match: "- Name"
+                pattern3 = r'-\s+([A-Za-z]+)'
+                match3 = re.search(pattern3, comment)
                 if match3:
                     return match3.group(1).strip()
-                
+
+                # Pattern 4: If there's text after RJ/CSH/ZVC/ECO/INN number, try to extract name
+                pattern4 = r'#?(RJ|CSH|ZVC|ECO|INN|TX)\d+\.?\s*-?\s*([A-Za-z]+)'
+                match4 = re.search(pattern4, comment, re.IGNORECASE)
+                if match4:
+                    return match4.group(2).strip()
+
                 # Fallback: Return empty if no pattern matches
                 return ''
 
@@ -373,10 +384,11 @@ class KazangWorkflow:
             for val in ledger[comment_col]:
                 payref = extract_payment_ref_from_comment(val)
                 payment_refs.append(payref)
-                
-                # Also extract RJ number while we're at it
-                rj_match = re.search(r'#?(RJ\d+)', str(val), re.IGNORECASE)
-                rj = rj_match.group(1).upper() if rj_match else ''
+
+                # Also extract RJ/CSH/ZVC/ECO/INN number while we're at it
+                # Patterns: RJ123456, CSH764074250, TX123456, ZVC128809565, ECO904183634, INN757797206
+                rj_match = re.search(r'#?(RJ|CSH|TX|ZVC|ECO|INN)[-]?(\d{6,})', str(val), re.IGNORECASE)
+                rj = rj_match.group(0).replace('#', '').replace('-', '').upper() if rj_match else ''
                 rj_numbers.append(rj)
 
             # Find position to insert columns (after Comment column)
@@ -448,8 +460,9 @@ class KazangWorkflow:
             def extract_rj(comment):
                 if not isinstance(comment, str):
                     return ''
-                rj_match = re.search(r'#?(RJ\d+)', comment, re.IGNORECASE)
-                return rj_match.group(1).upper() if rj_match else ''
+                # Patterns: RJ123456, CSH764074250, TX123456, ZVC128809565, ECO904183634, INN757797206
+                rj_match = re.search(r'#?(RJ|CSH|TX|ZVC|ECO|INN)[-]?(\d{6,})', comment, re.IGNORECASE)
+                return rj_match.group(0).replace('#', '').replace('-', '').upper() if rj_match else ''
 
             rj_numbers = [extract_rj(val) for val in ledger[comment_col]]
 

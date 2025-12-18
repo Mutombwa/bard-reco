@@ -541,19 +541,43 @@ class FNBWorkflow:
                 if not isinstance(comment, str):
                     return '', ''
 
-                # RJ-Number: look for RJ or TX followed by digits
-                rj_match = re.search(r'(RJ|TX)[-]?(\d{6,})', comment, re.IGNORECASE)
-                rj = rj_match.group(0).replace('-', '') if rj_match else ''
+                # RJ-Number: look for RJ, TX, CSH, ZVC, ECO, INN followed by digits
+                # Patterns: RJ123456, TX123456, CSH764074250, ZVC128809565, ECO904183634, INN757797206
+                # Also handles: Reversal: (#Ref CSH767209773)
+                rj_match = re.search(r'(RJ|TX|CSH|ZVC|ECO|INN)[-]?(\d{6,})', comment, re.IGNORECASE)
+                rj = rj_match.group(0).replace('-', '').replace('#', '').upper() if rj_match else ''
 
                 payref = ''
-                payref_match = re.search(r'Payment Ref[#:]?\s*([\w\s\-\.,&]+)', comment, re.IGNORECASE)
+                # Pattern 1: Explicit "Payment Ref #:" label
+                payref_match = re.search(r'Payment\s+Ref\s*[#:]+\s*([\w\s\-\.,&]+)', comment, re.IGNORECASE)
                 if payref_match:
                     payref = payref_match.group(1).strip()
+                # Pattern 2: Parentheses format - "Ref CSH764074250 - (Phuthani mabhena)"
+                # But not if it's just the reference itself like "Reversal: (#Ref CSH767209773)"
+                elif re.search(r'\(\s*([^)]+)\s*\)', comment):
+                    paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
+                    paren_content = paren_match.group(1).strip()
+                    # Only use if it doesn't look like a reference (doesn't start with #Ref or Ref)
+                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
+                        payref = paren_content
+                # Pattern 3: After RJ/TX/CSH number
                 elif rj_match:
                     after = comment[rj_match.end():]
                     after = after.lstrip(' .:-#')
-                    # Don't split on dots to preserve names like "K.kwiyo"
-                    payref = re.split(r'[,\n\r]', after)[0].strip()
+                    # Check if there's a dash followed by text (handle "- Name" format)
+                    dash_match = re.search(r'-\s*(.+)', after)
+                    if dash_match:
+                        # Extract text after dash, handle parentheses if present
+                        text_after_dash = dash_match.group(1).strip()
+                        paren_in_dash = re.search(r'\(\s*([^)]+)\s*\)', text_after_dash)
+                        if paren_in_dash:
+                            payref = paren_in_dash.group(1).strip()
+                        else:
+                            # Don't split on dots to preserve names like "K.kwiyo"
+                            payref = re.split(r'[,\n\r]', text_after_dash)[0].strip()
+                    else:
+                        # Don't split on dots to preserve names like "K.kwiyo"
+                        payref = re.split(r'[,\n\r]', after)[0].strip()
                     # Clean up trailing dots/spaces
                     payref = payref.rstrip('. ')
                 else:
