@@ -17,11 +17,15 @@ import sys
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
-# Import session history component
+# Import session history component (from components folder)
 try:
-    from session_history import render_session_history
+    from components.session_history import render_session_history
 except ImportError:
-    render_session_history = None
+    try:
+        # Fallback: try relative import
+        from session_history import render_session_history
+    except ImportError:
+        render_session_history = None
 
 
 class Dashboard:
