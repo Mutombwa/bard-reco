@@ -306,6 +306,7 @@ def show_main_app():
         # Settings button
         if st.button("⚙️ Settings", use_container_width=True, key="sidebar_settings"):
             st.session_state.show_settings = True
+            st.rerun()
 
         # Logout button
         if st.button("🚪 Logout", use_container_width=True):
