@@ -39,6 +39,7 @@ import hashlib
 import os
 from datetime import datetime
 from typing import Optional, Dict, Tuple
+from werkzeug.security import generate_password_hash, check_password_hash
 
 class SupabaseAuthentication:
     """Supabase-backed authentication system"""
@@ -78,24 +79,25 @@ class SupabaseAuthentication:
             # Don't show error here - handled by hybrid_auth
 
     def _hash_password(self, password: str) -> str:
-        """Hash password using SHA-256 (simple and reliable)"""
-        return hashlib.sha256(password.encode()).hexdigest()
+        """Hash password using Werkzeug (compatible with ROSEBUD Flask app)"""
+        # Use pbkdf2:sha256 method which is memory-efficient for cloud deployment
+        return generate_password_hash(password, method='pbkdf2:sha256')
 
     def _verify_password(self, password: str, stored_hash: str) -> bool:
-        """Verify password against stored SHA-256 hash"""
+        """Verify password against stored hash (supports multiple formats)"""
         try:
-            # SHA-256 hash comparison (64 char hex string)
-            sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+            # Try Werkzeug verification first (handles scrypt, pbkdf2, etc.)
+            if stored_hash.startswith(('scrypt:', 'pbkdf2:', 'sha256:')):
+                return check_password_hash(stored_hash, password)
 
-            # Direct comparison
-            if stored_hash == sha256_hash:
-                return True
+            # Fallback: SHA-256 hex comparison (legacy BARD-RECO format)
+            if len(stored_hash) == 64:  # SHA-256 produces 64 char hex
+                sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+                if stored_hash.lower() == sha256_hash.lower():
+                    return True
 
-            # Case-insensitive comparison
-            if stored_hash.lower() == sha256_hash.lower():
-                return True
-
-            return False
+            # Try Werkzeug as final fallback
+            return check_password_hash(stored_hash, password)
 
         except Exception as e:
             print(f"Password verification error: {e}")
