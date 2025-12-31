@@ -12,6 +12,17 @@ from datetime import datetime, timedelta
 import numpy as np
 import json
 import os
+import sys
+
+# Add utils to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
+
+# Import session history component
+try:
+    from session_history import render_session_history
+except ImportError:
+    render_session_history = None
+
 
 class Dashboard:
     """Professional interactive dashboard with real-time analytics"""
@@ -186,6 +197,14 @@ class Dashboard:
         with col2:
             st.subheader("📋 Audit Trail")
             self.render_audit_trail()
+
+        # Session History Section
+        st.markdown("---")
+        st.subheader("📜 Session History")
+        if render_session_history:
+            render_session_history()
+        else:
+            st.info("Session history not available. Check if the component is installed.")
 
         # Removed unnecessary tips section for cleaner dashboard
 

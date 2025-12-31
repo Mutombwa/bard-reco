@@ -19,6 +19,19 @@ from datetime import datetime
 from collections import defaultdict
 import time
 import re
+import sys
+import os
+
+# Add utils to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
+
+# Import Supabase database service
+try:
+    from supabase_db import get_db as get_supabase_db, save_reconciliation_results
+except ImportError:
+    get_supabase_db = None
+    save_reconciliation_results = None
+
 
 class CorporateWorkflow:
     """Ultra-fast Corporate Settlement Workflow - OPTIMIZED"""
@@ -756,3 +769,142 @@ class CorporateWorkflow:
                 st.info(f"✅ {len(batch_df):,} transactions")
             else:
                 st.info("No transactions in this batch")
+
+        # Save to Database section
+        st.markdown("---")
+        self.render_save_to_db(results, stats)
+
+    def render_save_to_db(self, results, stats):
+        """Render save to database section"""
+        st.markdown("### 💾 Save Results to Database")
+
+        # Check database status
+        db = get_supabase_db() if get_supabase_db else None
+        db_status = "Supabase (Cloud)" if db and db.is_enabled() else "Local Storage"
+        st.info(f"Storage: **{db_status}**")
+
+        # Get counts
+        matched_count = stats.get('batch1', 0) + stats.get('batch2', 0) + stats.get('batch3', 0) + stats.get('batch4', 0) + stats.get('batch5', 0)
+        unmatched_count = stats.get('batch6', 0)
+
+        # Session name input
+        default_name = f"Corporate Reconciliation - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        session_name = st.text_input(
+            "Session Name",
+            value=default_name,
+            key="corporate_save_session_name"
+        )
+
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Processed", stats.get('total', 0))
+        with col2:
+            st.metric("Matched (Batches 1-5)", matched_count)
+        with col3:
+            st.metric("Unmatched (Batch 6)", unmatched_count)
+
+        # Save button
+        if st.button("💾 Save to Database", type="primary", use_container_width=True, key="corporate_save_to_db_btn"):
+            success = self.save_results_to_db(session_name, results, stats)
+            if success:
+                st.success("✅ Results saved successfully!")
+                st.balloons()
+            else:
+                st.error("❌ Failed to save results. Please try again.")
+
+    def save_results_to_db(self, session_name: str, results: dict, stats: dict) -> bool:
+        """Save reconciliation results to Supabase or local storage"""
+        try:
+            if save_reconciliation_results is None:
+                st.warning("Supabase not configured. Saving to local storage.")
+                return self._save_to_local_storage(session_name, results, stats)
+
+            # Combine matched batches (1-5) into matched_df
+            matched_dfs = []
+            for batch_key in ['batch1', 'batch2', 'batch3', 'batch4', 'batch5']:
+                if batch_key in results and not results[batch_key].empty:
+                    batch_df = results[batch_key].copy()
+                    batch_df['Batch_Type'] = batch_key
+                    matched_dfs.append(batch_df)
+
+            matched_df = pd.concat(matched_dfs, ignore_index=True) if matched_dfs else pd.DataFrame()
+
+            # Batch 6 is unmatched
+            unmatched_df = results.get('batch6', pd.DataFrame())
+
+            # Calculate match rate
+            total_items = stats.get('total', 0)
+            matched_count = len(matched_df)
+            match_rate = (matched_count / total_items * 100) if total_items > 0 else 0
+
+            # Save using the unified save function
+            success, session_id = save_reconciliation_results(
+                workflow_type='Corporate',
+                session_name=session_name,
+                matched_df=matched_df,
+                unmatched_ledger_df=unmatched_df,
+                unmatched_statement_df=pd.DataFrame(),  # Corporate doesn't have separate statement unmatched
+                match_rate=match_rate,
+                metadata={
+                    'batch1_count': stats.get('batch1', 0),
+                    'batch2_count': stats.get('batch2', 0),
+                    'batch3_count': stats.get('batch3', 0),
+                    'batch4_count': stats.get('batch4', 0),
+                    'batch5_count': stats.get('batch5', 0),
+                    'batch6_count': stats.get('batch6', 0),
+                    'processing_time': stats.get('processing_time', 0)
+                }
+            )
+
+            if success:
+                st.session_state.corporate_last_saved_session = session_id
+
+            return success
+
+        except Exception as e:
+            st.error(f"Error saving results: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+            return False
+
+    def _save_to_local_storage(self, session_name: str, results: dict, stats: dict) -> bool:
+        """Fallback: Save results to local session state storage"""
+        try:
+            import uuid
+
+            if 'local_sessions' not in st.session_state:
+                st.session_state.local_sessions = {}
+
+            session_id = str(uuid.uuid4())
+
+            matched_count = stats.get('batch1', 0) + stats.get('batch2', 0) + stats.get('batch3', 0) + stats.get('batch4', 0) + stats.get('batch5', 0)
+            unmatched_count = stats.get('batch6', 0)
+            total_items = stats.get('total', 0)
+            match_rate = (matched_count / total_items * 100) if total_items > 0 else 0
+
+            st.session_state.local_sessions[session_id] = {
+                'id': session_id,
+                'session_name': session_name,
+                'workflow_type': 'Corporate',
+                'status': 'completed',
+                'created_at': datetime.now().isoformat(),
+                'total_matched': matched_count,
+                'total_unmatched_ledger': unmatched_count,
+                'total_unmatched_statement': 0,
+                'match_rate': match_rate,
+                'metadata': {
+                    'batch1_count': stats.get('batch1', 0),
+                    'batch2_count': stats.get('batch2', 0),
+                    'batch3_count': stats.get('batch3', 0),
+                    'batch4_count': stats.get('batch4', 0),
+                    'batch5_count': stats.get('batch5', 0),
+                    'batch6_count': stats.get('batch6', 0)
+                }
+            }
+
+            return True
+
+        except Exception as e:
+            st.error(f"Error saving to local storage: {str(e)}")
+            return False

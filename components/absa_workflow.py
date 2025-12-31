@@ -26,6 +26,13 @@ from data_cleaner import clean_amount_column  # type: ignore
 from column_selector import ColumnSelector  # type: ignore
 from file_loader import load_uploaded_file, get_dataframe_info  # type: ignore
 
+# Import Supabase database service
+try:
+    from supabase_db import get_db as get_supabase_db, save_reconciliation_results
+except ImportError:
+    get_supabase_db = None
+    save_reconciliation_results = None
+
 class ABSAWorkflow:
     """ABSA Bank Reconciliation Workflow with ABSA-Specific Statement Processing"""
 
@@ -911,6 +918,10 @@ class ABSAWorkflow:
         with tabs[2]:
             if 'unmatched_statement' in results and not results['unmatched_statement'].empty:
                 st.dataframe(results['unmatched_statement'], use_container_width=True)
+
+        # Save to Database section
+        st.markdown("---")
+        self.render_save_to_db(results)
     
     def export_to_excel(self, results):
         """Export all results to Excel with proper batch grouping (ABSA style)"""
@@ -1260,3 +1271,125 @@ class ABSAWorkflow:
             import traceback
             with st.expander("🔍 Error Details"):
                 st.code(traceback.format_exc())
+
+    def render_save_to_db(self, results):
+        """Render save to database section"""
+        st.markdown("### 💾 Save Results to Database")
+
+        # Check database status
+        db = get_supabase_db() if get_supabase_db else None
+        db_status = "Supabase (Cloud)" if db and db.is_enabled() else "Local Storage"
+        st.info(f"Storage: **{db_status}**")
+
+        # Get counts
+        matched_count = results.get('total_matched', 0)
+        unmatched_ledger_count = len(results.get('unmatched_ledger', []))
+        unmatched_statement_count = len(results.get('unmatched_statement', []))
+
+        # Session name input
+        default_name = f"ABSA Reconciliation - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        session_name = st.text_input(
+            "Session Name",
+            value=default_name,
+            key="absa_save_session_name"
+        )
+
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Matched", matched_count)
+        with col2:
+            st.metric("Unmatched (Ledger)", unmatched_ledger_count)
+        with col3:
+            st.metric("Unmatched (Statement)", unmatched_statement_count)
+
+        # Save button
+        if st.button("💾 Save to Database", type="primary", use_container_width=True, key="absa_save_to_db_btn"):
+            success = self.save_results_to_db(session_name, results)
+            if success:
+                st.success("✅ Results saved successfully!")
+                st.balloons()
+            else:
+                st.error("❌ Failed to save results. Please try again.")
+
+    def save_results_to_db(self, session_name: str, results: dict) -> bool:
+        """Save reconciliation results to Supabase or local storage"""
+        try:
+            if save_reconciliation_results is None:
+                st.warning("Database service not available. Saving to local storage.")
+                return self._save_to_local_storage(session_name, results)
+
+            # Prepare dataframes
+            matched_df = results.get('matched', pd.DataFrame())
+            unmatched_ledger_df = results.get('unmatched_ledger', pd.DataFrame())
+            unmatched_statement_df = results.get('unmatched_statement', pd.DataFrame())
+
+            # Calculate match rate
+            total_items = len(matched_df) + len(unmatched_ledger_df) + len(unmatched_statement_df)
+            match_rate = (len(matched_df) / total_items * 100) if total_items > 0 else 0
+
+            # Save using the unified save function
+            success, session_id = save_reconciliation_results(
+                workflow_type='ABSA',
+                session_name=session_name,
+                matched_df=matched_df,
+                unmatched_ledger_df=unmatched_ledger_df,
+                unmatched_statement_df=unmatched_statement_df,
+                match_rate=match_rate,
+                metadata={
+                    'perfect_matches': results.get('perfect_match_count', 0),
+                    'fuzzy_matches': results.get('fuzzy_match_count', 0),
+                    'foreign_credits': results.get('foreign_credits_count', 0),
+                    'split_transactions': results.get('split_count', 0)
+                }
+            )
+
+            if success:
+                st.session_state.absa_last_saved_session = session_id
+
+            return success
+
+        except Exception as e:
+            st.error(f"Error saving results: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+            return False
+
+    def _save_to_local_storage(self, session_name: str, results: dict) -> bool:
+        """Fallback: Save results to local session state storage"""
+        try:
+            import uuid
+
+            if 'local_sessions' not in st.session_state:
+                st.session_state.local_sessions = {}
+
+            session_id = str(uuid.uuid4())
+
+            matched_df = results.get('matched', pd.DataFrame())
+            unmatched_ledger_df = results.get('unmatched_ledger', pd.DataFrame())
+            unmatched_statement_df = results.get('unmatched_statement', pd.DataFrame())
+
+            total_items = len(matched_df) + len(unmatched_ledger_df) + len(unmatched_statement_df)
+            match_rate = (len(matched_df) / total_items * 100) if total_items > 0 else 0
+
+            st.session_state.local_sessions[session_id] = {
+                'id': session_id,
+                'session_name': session_name,
+                'workflow_type': 'ABSA',
+                'status': 'completed',
+                'created_at': datetime.now().isoformat(),
+                'total_matched': len(matched_df),
+                'total_unmatched_ledger': len(unmatched_ledger_df),
+                'total_unmatched_statement': len(unmatched_statement_df),
+                'match_rate': match_rate,
+                'metadata': {
+                    'perfect_matches': results.get('perfect_match_count', 0),
+                    'fuzzy_matches': results.get('fuzzy_match_count', 0)
+                }
+            }
+
+            return True
+
+        except Exception as e:
+            st.error(f"Error saving to local storage: {str(e)}")
+            return False

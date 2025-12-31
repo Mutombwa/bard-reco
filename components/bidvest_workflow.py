@@ -20,6 +20,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from data_cleaner import clean_amount_column  # type: ignore
 from column_selector import ColumnSelector  # type: ignore
 
+# Import Supabase database service
+try:
+    from supabase_db import get_db as get_supabase_db, save_reconciliation_results
+except ImportError:
+    get_supabase_db = None
+    save_reconciliation_results = None
+
+
 class BidvestWorkflow:
     """Bidvest Settlement Reconciliation Workflow with Exact GUI Logic"""
 
@@ -777,6 +785,153 @@ class BidvestWorkflow:
         # Show export UI when in export mode
         if st.session_state.bidvest_export_mode:
             self.export_to_excel(results)
+
+        # Save to Database section
+        st.markdown("---")
+        self.render_save_to_db(results)
+
+    def render_save_to_db(self, results):
+        """Render save to database section"""
+        st.markdown("### 💾 Save Results to Database")
+
+        # Check database status
+        db = get_supabase_db() if get_supabase_db else None
+        db_status = "Supabase (Cloud)" if db and db.is_enabled() else "Local Storage"
+        st.info(f"Storage: **{db_status}**")
+
+        summary = results.get('summary', {})
+
+        # Get counts
+        matched_count = summary.get('exact_matches', 0) + summary.get('grouped_matches', 0)
+        unmatched_ledger_count = summary.get('unmatched_ledger', 0)
+        unmatched_statement_count = summary.get('unmatched_statement', 0)
+
+        # Session name input
+        default_name = f"Bidvest Reconciliation - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        session_name = st.text_input(
+            "Session Name",
+            value=default_name,
+            key="bidvest_save_session_name"
+        )
+
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Matched", matched_count)
+        with col2:
+            st.metric("Unmatched (Ledger)", unmatched_ledger_count)
+        with col3:
+            st.metric("Unmatched (Statement)", unmatched_statement_count)
+
+        # Save button
+        if st.button("💾 Save to Database", type="primary", use_container_width=True, key="bidvest_save_to_db_btn"):
+            success = self.save_results_to_db(session_name, results)
+            if success:
+                st.success("✅ Results saved successfully!")
+                st.balloons()
+            else:
+                st.error("❌ Failed to save results. Please try again.")
+
+    def save_results_to_db(self, session_name: str, results: dict) -> bool:
+        """Save reconciliation results to Supabase or local storage"""
+        try:
+            if save_reconciliation_results is None:
+                st.warning("Supabase not configured. Saving to local storage.")
+                return self._save_to_local_storage(session_name, results)
+
+            summary = results.get('summary', {})
+            ledger = results.get('ledger', pd.DataFrame())
+            statement = results.get('statement', pd.DataFrame())
+
+            # Build matched dataframe
+            all_matches = results.get('exact_matches', []) + results.get('grouped_matches', [])
+            if all_matches:
+                matched_df = self.build_matched_dataframe(
+                    all_matches, ledger, statement,
+                    st.session_state.bidvest_match_config
+                )
+            else:
+                matched_df = pd.DataFrame()
+
+            # Get unmatched
+            matched_ledger_idx = set([p[0] for p in all_matches])
+            matched_stmt_idx = set([p[1] for p in all_matches])
+
+            unmatched_ledger_df = ledger[~ledger.index.isin(matched_ledger_idx)].copy()
+            unmatched_ledger_df = unmatched_ledger_df.drop(columns=['__date', '__debit', '__credit'], errors='ignore')
+
+            unmatched_statement_df = statement[~statement.index.isin(matched_stmt_idx)].copy()
+            unmatched_statement_df = unmatched_statement_df.drop(columns=['__date', '__amt'], errors='ignore')
+
+            # Calculate match rate
+            total_items = len(ledger) + len(statement)
+            matched_count = len(matched_df)
+            match_rate = (matched_count * 2 / total_items * 100) if total_items > 0 else 0
+
+            # Save using the unified save function
+            success, session_id = save_reconciliation_results(
+                workflow_type='Bidvest',
+                session_name=session_name,
+                matched_df=matched_df,
+                unmatched_ledger_df=unmatched_ledger_df,
+                unmatched_statement_df=unmatched_statement_df,
+                match_rate=match_rate,
+                metadata={
+                    'exact_matches': summary.get('exact_matches', 0),
+                    'grouped_matches': summary.get('grouped_matches', 0)
+                }
+            )
+
+            if success:
+                st.session_state.bidvest_last_saved_session = session_id
+
+            return success
+
+        except Exception as e:
+            st.error(f"Error saving results: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+            return False
+
+    def _save_to_local_storage(self, session_name: str, results: dict) -> bool:
+        """Fallback: Save results to local session state storage"""
+        try:
+            import uuid
+
+            if 'local_sessions' not in st.session_state:
+                st.session_state.local_sessions = {}
+
+            session_id = str(uuid.uuid4())
+            summary = results.get('summary', {})
+
+            matched_count = summary.get('exact_matches', 0) + summary.get('grouped_matches', 0)
+            unmatched_ledger_count = summary.get('unmatched_ledger', 0)
+            unmatched_statement_count = summary.get('unmatched_statement', 0)
+
+            total_items = matched_count + unmatched_ledger_count + unmatched_statement_count
+            match_rate = (matched_count / total_items * 100) if total_items > 0 else 0
+
+            st.session_state.local_sessions[session_id] = {
+                'id': session_id,
+                'session_name': session_name,
+                'workflow_type': 'Bidvest',
+                'status': 'completed',
+                'created_at': datetime.now().isoformat(),
+                'total_matched': matched_count,
+                'total_unmatched_ledger': unmatched_ledger_count,
+                'total_unmatched_statement': unmatched_statement_count,
+                'match_rate': match_rate,
+                'metadata': {
+                    'exact_matches': summary.get('exact_matches', 0),
+                    'grouped_matches': summary.get('grouped_matches', 0)
+                }
+            }
+
+            return True
+
+        except Exception as e:
+            st.error(f"Error saving to local storage: {str(e)}")
+            return False
 
     def build_matched_dataframe(self, matches, ledger, statement, config):
         """Build a dataframe from matched pairs with ALL columns side-by-side"""
