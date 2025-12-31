@@ -41,7 +41,7 @@ class CorporateWorkflow:
 
     @staticmethod
     def extract_references(comment_text):
-        """Extract RJ, TX reference numbers from comment text"""
+        """Extract RJ, TX, CSH, ZVC, ECO, INN reference numbers from comment text"""
         if pd.isna(comment_text) or not isinstance(comment_text, str):
             return ""
 
@@ -54,16 +54,67 @@ class CorporateWorkflow:
 
         all_matches = []
 
-        # Extract patterns
+        # Extract ALL reference patterns (RJ, TX, CSH, ZVC, ECO, INN)
+        # RJ patterns (11 digits)
         all_matches.extend(re.findall(r'RJ\d{11}', comment_text))
+        # TX patterns (11 digits)
         all_matches.extend(re.findall(r'TX\d{11}', comment_text))
+        # CSH patterns (9+ digits) - Cash transactions
+        all_matches.extend(re.findall(r'CSH\d{9,}', comment_text))
+        # ZVC patterns (9 digits) - Reversal transactions
+        all_matches.extend(re.findall(r'ZVC\d{9}', comment_text))
+        # ECO patterns (9 digits) - ECO transactions
+        all_matches.extend(re.findall(r'ECO\d{9}', comment_text))
+        # INN patterns (9 digits) - INN transactions
+        all_matches.extend(re.findall(r'INN\d{9}', comment_text))
+        # J patterns (5 digits) - Journal entries
         all_matches.extend(re.findall(r'(?<!R)(?<!T)J\d{5}', comment_text))
 
-        # Remove duplicates
+        # Remove duplicates while preserving order
         seen = set()
         unique_matches = [m for m in all_matches if not (m in seen or seen.add(m))]
 
         return ', '.join(unique_matches) if unique_matches else ""
+
+    @staticmethod
+    def extract_payment_ref(comment_text):
+        """Extract payment reference (name) from comment text - strips phone numbers"""
+        if pd.isna(comment_text) or not isinstance(comment_text, str):
+            return ""
+
+        comment = comment_text.strip()
+
+        def clean_name(name):
+            """Remove phone numbers from extracted name"""
+            if not name:
+                return ''
+            name = name.strip()
+            # Remove trailing phone number after space: "Jenet 6452843846" → "Jenet"
+            name = re.sub(r'\s+\d{10,}$', '', name)
+            # Remove phone number after slash: "gracious/6453092146" → "gracious"
+            name = re.sub(r'/\d{10,}$', '', name)
+            # Remove attached phone number: "remember6453463069" → "remember"
+            name = re.sub(r'^([a-zA-Z][a-zA-Z\s]*?)\d{10,}$', r'\1', name)
+            return name.strip()
+
+        # Find ALL parentheses and use the one with the name (not #Ref)
+        all_parens = re.findall(r'\(\s*([^)]+)\s*\)', comment)
+        for paren_content in all_parens:
+            paren_content = paren_content.strip()
+            # Skip if it looks like a reference
+            if re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
+                continue
+            # Found a valid name in parentheses
+            cleaned = clean_name(paren_content)
+            if cleaned:
+                return cleaned
+
+        # Pattern: ". - Name" or "- Name"
+        dash_match = re.search(r'[-–]\s*([A-Za-z][A-Za-z\s]*)', comment)
+        if dash_match:
+            return clean_name(dash_match.group(1))
+
+        return ""
 
     def render(self):
         """Render Corporate workflow"""

@@ -335,44 +335,62 @@ class KazangWorkflow:
                 Extract Payment Ref from Kazang comment format
 
                 Examples:
+                - "Ref CSH891089488 - (Jenet 6452843846)" → "Jenet"
+                - "Ref CSH759506112 - (gracious/6453092146)" → "gracious"
+                - "Ref CSH654176053 - (remember6453463069)" → "remember"
+                - "Reversal: (#Ref CSH613695391)  - (Doubt Sibanda)" → "Doubt Sibanda"
                 - "Ref #RJ58822828410. - Gugu 6408370691" → "Gugu"
-                - "Ref #RJ58953541109. - Lucy6410281493" → "Lucy"
-                - "Ref CSH764074250 - (Phuthani mabhena)" → "Phuthani mabhena"
-                - "Ref CSH293299862 - (Mlamuli)" → "Mlamuli"
                 """
                 if not isinstance(comment, str):
                     return ''
 
                 comment = comment.strip()
 
-                # Pattern 1: Parentheses format - "Ref CSH764074250 - (Phuthani mabhena)"
-                # But not if it's just the reference itself like "Reversal: (#Ref CSH767209773)"
-                paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
-                if paren_match:
-                    paren_content = paren_match.group(1).strip()
-                    # Only use if it doesn't look like a reference
-                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
-                        return paren_content
+                def clean_name(name):
+                    """Remove phone numbers from extracted name"""
+                    if not name:
+                        return ''
+                    name = name.strip()
+                    # Remove trailing phone number after space: "Jenet 6452843846" → "Jenet"
+                    name = re.sub(r'\s+\d{10,}$', '', name)
+                    # Remove phone number after slash: "gracious/6453092146" → "gracious"
+                    name = re.sub(r'/\d{10,}$', '', name)
+                    # Remove attached phone number (name followed directly by 10+ digits): "remember6453463069" → "remember"
+                    name = re.sub(r'^([a-zA-Z][a-zA-Z\s]*?)\d{10,}$', r'\1', name)
+                    return name.strip()
+
+                # Pattern 1: Find ALL parentheses and use the one with the name (not #Ref)
+                # This handles: "Reversal: (#Ref CSH613695391)  - (Doubt Sibanda)"
+                all_parens = re.findall(r'\(\s*([^)]+)\s*\)', comment)
+                for paren_content in all_parens:
+                    paren_content = paren_content.strip()
+                    # Skip if it looks like a reference
+                    if re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
+                        continue
+                    # Found a valid name in parentheses
+                    cleaned = clean_name(paren_content)
+                    if cleaned:
+                        return cleaned
 
                 # Pattern 2: Look for "- " followed by name (with dot before)
                 # Match: ". - Name" where Name is letters (possibly with numbers attached)
-                pattern2 = r'\.\s*-\s*([A-Za-z]+)'
+                pattern2 = r'\.\s*-\s*([A-Za-z][A-Za-z\s]*)'
                 match2 = re.search(pattern2, comment)
                 if match2:
-                    return match2.group(1).strip()
+                    return clean_name(match2.group(1))
 
                 # Pattern 3: Alternative format without dot
-                # Match: "- Name"
-                pattern3 = r'-\s+([A-Za-z]+)'
+                # Match: "- Name" (space after dash required)
+                pattern3 = r'-\s+([A-Za-z][A-Za-z\s]*)'
                 match3 = re.search(pattern3, comment)
                 if match3:
-                    return match3.group(1).strip()
+                    return clean_name(match3.group(1))
 
                 # Pattern 4: If there's text after RJ/CSH/ZVC/ECO/INN number, try to extract name
-                pattern4 = r'#?(RJ|CSH|ZVC|ECO|INN|TX)\d+\.?\s*-?\s*([A-Za-z]+)'
+                pattern4 = r'#?(RJ|CSH|ZVC|ECO|INN|TX)\d+\.?\s*-?\s*([A-Za-z][A-Za-z\s]*)'
                 match4 = re.search(pattern4, comment, re.IGNORECASE)
                 if match4:
-                    return match4.group(2).strip()
+                    return clean_name(match4.group(2))
 
                 # Fallback: Return empty if no pattern matches
                 return ''
@@ -425,6 +443,9 @@ class KazangWorkflow:
                         'RJ-Number': rj_numbers[i]
                     })
                 st.dataframe(pd.DataFrame(sample_data), use_container_width=True)
+
+            # Rerun to update UI with new columns
+            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Error extracting Payment Ref: {str(e)}")
@@ -485,6 +506,9 @@ class KazangWorkflow:
                         'RJ-Number': rj_numbers[i]
                     })
                 st.dataframe(pd.DataFrame(sample_data), use_container_width=True)
+
+            # Rerun to update UI with new columns
+            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Error extracting RJ numbers: {str(e)}")
