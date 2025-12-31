@@ -1,7 +1,8 @@
 """
-Professional Dashboard Component
-=================================
-Advanced analytics, metrics, and insights for reconciliation workflows
+Professional Dashboard Component - BARD-RECO
+=============================================
+Modern analytics dashboard with real-time metrics, session tracking,
+and historical batch management for all reconciliation workflows.
 """
 
 import streamlit as st
@@ -9,7 +10,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import numpy as np
+from typing import Optional, Dict, List, Any
 import json
 import os
 import sys
@@ -17,748 +18,696 @@ import sys
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
-# Import session history component (from components folder)
+# Import database service
 try:
-    from components.session_history import render_session_history
+    from supabase_db import get_db, SupabaseDB
 except ImportError:
-    try:
-        # Fallback: try relative import
-        from session_history import render_session_history
-    except ImportError:
-        render_session_history = None
+    get_db = None
+    SupabaseDB = None
 
 
 class Dashboard:
-    """Professional interactive dashboard with real-time analytics"""
+    """Professional Dashboard with comprehensive workflow tracking"""
+
+    # Workflow configurations
+    WORKFLOWS = {
+        'FNB': {'icon': '🏦', 'color': '#1e40af', 'session_key': 'fnb_results'},
+        'ABSA': {'icon': '🏦', 'color': '#059669', 'session_key': 'absa_results'},
+        'Kazang': {'icon': '💳', 'color': '#f59e0b', 'session_key': 'kazang_results'},
+        'Bidvest': {'icon': '💼', 'color': '#7c3aed', 'session_key': 'bidvest_results'},
+        'Corporate': {'icon': '🏢', 'color': '#dc2626', 'session_key': 'corporate_results'},
+    }
 
     def __init__(self):
-        # Don't auto-load data in __init__ - do it lazily when needed
-        self.initialize_history()
+        self.db = get_db() if get_db else None
+        self._init_session_state()
 
-    def load_data(self):
-        """Load dashboard data from session state and database (called only when rendering)"""
-        # Check for results from different workflows in session state
-        self.fnb_results = st.session_state.get('fnb_results')
-        self.bidvest_results = st.session_state.get('bidvest_results')
-        self.corporate_results = st.session_state.get('corporate_results')
-        
-        # Also try to load from database - but only if not already loaded
-        if not hasattr(self, '_db_loaded'):
-            self.load_from_database()
-            self._db_loaded = True
-
-    def initialize_history(self):
-        """Initialize reconciliation history tracking"""
-        if 'reconciliation_history' not in st.session_state:
-            st.session_state.reconciliation_history = []
-    
-    def load_from_database(self):
-        """Load latest reconciliation results from database"""
-        # Database loading disabled - using session state only
-        # TODO: Implement database integration when needed
-        pass
+    def _init_session_state(self):
+        """Initialize dashboard session state"""
+        if 'dash_view' not in st.session_state:
+            st.session_state.dash_view = 'overview'
+        if 'dash_selected_session' not in st.session_state:
+            st.session_state.dash_selected_session = None
 
     def render(self):
-        """Render professional dashboard with transaction category navigation"""
-        
-        # Load data lazily only when rendering
-        self.load_data()
+        """Main render method for the dashboard"""
+        # Inject custom CSS
+        self._inject_styles()
 
-        # Header
+        # Navigation tabs
+        tab1, tab2, tab3 = st.tabs([
+            "📊 Overview",
+            "📜 Session History",
+            "📥 Batch Downloads"
+        ])
+
+        with tab1:
+            self._render_overview()
+
+        with tab2:
+            self._render_session_history()
+
+        with tab3:
+            self._render_batch_downloads()
+
+    def _inject_styles(self):
+        """Inject custom CSS for modern styling"""
         st.markdown("""
         <style>
-        .gradient-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 2.5rem;
-            border-radius: 15px;
+        .dashboard-header {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #60a5fa 100%);
+            padding: 2rem;
+            border-radius: 16px;
             color: white;
             margin-bottom: 2rem;
-            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 10px 40px rgba(30, 58, 138, 0.3);
         }
-        .gradient-header h1 {
+        .dashboard-header h1 {
             color: white;
             margin: 0;
-            font-size: 2.5rem;
+            font-size: 2rem;
+            font-weight: 700;
         }
-        .gradient-header p {
-            color: #e0e7ff;
+        .dashboard-header p {
+            color: #bfdbfe;
             margin: 0.5rem 0 0 0;
-            font-size: 1.1rem;
+            font-size: 1rem;
         }
         .metric-card {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            color: white;
-            text-align: center;
-            box-shadow: 0 5px 20px rgba(245, 87, 108, 0.3);
-        }
-        .success-card {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            color: white;
-            text-align: center;
-            box-shadow: 0 5px 20px rgba(79, 172, 254, 0.3);
-        }
-        .warning-card {
-            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            color: white;
-            text-align: center;
-            box-shadow: 0 5px 20px rgba(250, 112, 154, 0.3);
-        }
-        .info-card {
-            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            color: #333;
-            text-align: center;
-            box-shadow: 0 5px 20px rgba(168, 237, 234, 0.3);
-        }
-        .metric-card h3, .success-card h3, .warning-card h3, .info-card h3 {
-            margin: 0;
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
-        .metric-card h1, .success-card h1, .warning-card h1, .info-card h1 {
-            margin: 0.5rem 0;
-            font-size: 2.5rem;
-            font-weight: bold;
-        }
-        .metric-card p, .success-card p, .warning-card p, .info-card p {
-            margin: 0;
-            font-size: 0.85rem;
-            opacity: 0.8;
-        }
-        .workflow-card {
-            border: 2px solid #e5e7eb;
-            border-radius: 10px;
-            padding: 1.5rem;
-            margin: 0.5rem 0;
             background: white;
-            transition: all 0.3s;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            border-left: 4px solid #3b82f6;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .workflow-card:hover {
-            border-color: #667eea;
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.2);
-        }
-        .nav-button {
-            display: inline-block;
-            padding: 12px 24px;
-            margin: 5px;
-            border-radius: 8px;
-            text-align: center;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            border: 2px solid #e5e7eb;
-            background: white;
-        }
-        .nav-button:hover {
+        .metric-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.12);
         }
-        .nav-button-active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-color: #667eea;
+        .workflow-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        .session-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+            transition: all 0.2s;
+        }
+        .session-card:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+        .status-completed { color: #059669; font-weight: 600; }
+        .status-in_progress { color: #f59e0b; font-weight: 600; }
+        .status-failed { color: #dc2626; font-weight: 600; }
+        .activity-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: #f8fafc;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid #3b82f6;
+        }
+        .no-data-message {
+            text-align: center;
+            padding: 3rem;
+            background: #f1f5f9;
+            border-radius: 12px;
+            color: #64748b;
         }
         </style>
+        """, unsafe_allow_html=True)
 
-        <div class="gradient-header">
-            <h1>🏠 Reconciliation Dashboard</h1>
-            <p>📊 Real-time insights and analytics</p>
+    def _render_overview(self):
+        """Render the overview tab with metrics and charts"""
+        # Header
+        st.markdown("""
+        <div class="dashboard-header">
+            <h1>📊 Reconciliation Dashboard</h1>
+            <p>Real-time analytics and insights across all workflows</p>
         </div>
         """, unsafe_allow_html=True)
 
-        # Transaction Category Navigation
-        st.markdown("### 📊 Transaction Categories")
-        self.render_transaction_navigation()
+        # Current Session Metrics
+        st.subheader("🎯 Current Session Summary")
+        self._render_current_session_metrics()
 
         st.markdown("---")
 
-        # Quick Stats Section
-        st.subheader("📈 Key Metrics")
-        self.render_quick_stats()
-
-        st.markdown("---")
-
-        # Charts Section - Show only match distribution
-        st.subheader("📊 Match Distribution")
-        self.render_match_distribution_chart()
-
-        st.markdown("---")
-
-        # Recent Activity and Audit Trail
+        # Charts Section
         col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("🕐 Recent Activity")
-            self.render_recent_activity()
-        
-        with col2:
-            st.subheader("📋 Audit Trail")
-            self.render_audit_trail()
-
-        # Session History Section
-        st.markdown("---")
-        st.subheader("📜 Session History")
-        if render_session_history:
-            render_session_history()
-        else:
-            st.info("Session history not available. Check if the component is installed.")
-
-        # Removed unnecessary tips section for cleaner dashboard
-
-    def render_transaction_navigation(self):
-        """Render professional transaction category navigation bar"""
-
-        # Initialize selected category in session state
-        if 'selected_category' not in st.session_state:
-            st.session_state.selected_category = 'all'
-
-        # Create navigation buttons in columns
-        # Note: Removed st.rerun() calls - Streamlit automatically reruns when session state changes
-        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            if st.button("✅ Matched", use_container_width=True, type="primary" if st.session_state.selected_category == 'matched' else "secondary", key="dash_btn_matched"):
-                st.session_state.selected_category = 'matched'
-            if st.button("🔄 Split Transactions", use_container_width=True, type="primary" if st.session_state.selected_category == 'split' else "secondary", key="dash_btn_split"):
-                st.session_state.selected_category = 'split'
+            st.subheader("📈 Match Distribution")
+            self._render_match_distribution_chart()
 
         with col2:
-            if st.button("📊 All Transactions", use_container_width=True, type="primary" if st.session_state.selected_category == 'all' else "secondary", key="dash_btn_all"):
-                st.session_state.selected_category = 'all'
-            if st.button("🎯 Balanced By Fuzzy", use_container_width=True, type="primary" if st.session_state.selected_category == 'fuzzy' else "secondary", key="dash_btn_fuzzy"):
-                st.session_state.selected_category = 'fuzzy'
+            st.subheader("📊 Workflow Comparison")
+            self._render_workflow_comparison_chart()
 
-        with col3:
-            if st.button("❌ Unmatched Ledger", use_container_width=True, type="primary" if st.session_state.selected_category == 'unmatched_ledger' else "secondary", key="dash_btn_unmatched_l"):
-                st.session_state.selected_category = 'unmatched_ledger'
-            if st.button("💱 Foreign Credits", use_container_width=True, type="primary" if st.session_state.selected_category == 'foreign' else "secondary", key="dash_btn_foreign"):
-                st.session_state.selected_category = 'foreign'
-
-        with col4:
-            if st.button("⚠️ Unmatched Statement", use_container_width=True, type="primary" if st.session_state.selected_category == 'unmatched_statement' else "secondary", key="dash_btn_unmatched_s"):
-                st.session_state.selected_category = 'unmatched_statement'
-
-        # Display selected category transactions
         st.markdown("---")
-        self.display_category_transactions(st.session_state.selected_category)
 
-    def display_category_transactions(self, category):
-        """Display transactions for the selected category"""
+        # Recent Activity
+        st.subheader("🕐 Recent Activity")
+        self._render_recent_activity()
 
-        st.markdown(f"### 📋 {self.get_category_title(category)}")
-
-        # Get transactions based on category
-        transactions = self.get_transactions_by_category(category)
-
-        if transactions is not None and len(transactions) > 0:
-            # Display count
-            st.info(f"📊 Found {len(transactions)} transaction(s) in this category")
-
-            # Clean data - replace None/NaN with empty strings
-            transactions_clean = transactions.fillna('')
-            
-            # Display the data
-            st.dataframe(
-                transactions_clean,
-                use_container_width=True,
-                height=400
-            )
-
-            # Add export button
-            col1, col2, col3 = st.columns([1, 1, 2])
-            with col1:
-                if st.button("📥 Export to CSV", use_container_width=True, key=f'export_csv_{category}'):
-                    csv = transactions_clean.to_csv(index=False)
-                    st.download_button(
-                        label="💾 Download CSV",
-                        data=csv,
-                        file_name=f"{category}_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                        key=f'download_csv_{category}'
-                    )
-            with col2:
-                if st.button("📊 Export to Excel", use_container_width=True, key=f'export_excel_{category}'):
-                    st.info("Excel export functionality - Save as .xlsx format")
-        else:
-            st.success(f"✅ No transactions found in '{self.get_category_title(category)}' category")
-
-    def get_category_title(self, category):
-        """Get display title for category"""
-        titles = {
-            'all': 'All Transactions',
-            'matched': 'Matched Transactions',
-            'split': 'Split Transactions',
-            'fuzzy': 'Balanced By Fuzzy Matching',
-            'unmatched_ledger': 'Unmatched Ledger Transactions',
-            'unmatched_statement': 'Unmatched Statement Transactions',
-            'foreign': 'Foreign Credit Transactions'
-        }
-        return titles.get(category, 'Unknown Category')
-
-    def get_transactions_by_category(self, category):
-        """Get transactions filtered by category"""
-
-        # Collect all available transaction data from workflows
-        all_transactions = []
-
-        # From FNB workflow
-        if self.fnb_results:
-            # Matched transactions (includes Perfect, Fuzzy, Foreign)
-            if 'matched' in self.fnb_results and not self.fnb_results['matched'].empty:
-                matched = self.fnb_results['matched'].copy()
-                matched['source'] = 'FNB Workflow'
-                matched['category'] = 'Matched'
-                all_transactions.append(matched)
-
-            # Unmatched ledger
-            if 'unmatched_ledger' in self.fnb_results and not self.fnb_results['unmatched_ledger'].empty:
-                unmatched_l = self.fnb_results['unmatched_ledger'].copy()
-                unmatched_l['source'] = 'FNB Workflow'
-                unmatched_l['category'] = 'Unmatched Ledger'
-                all_transactions.append(unmatched_l)
-
-            # Unmatched statement
-            if 'unmatched_statement' in self.fnb_results and not self.fnb_results['unmatched_statement'].empty:
-                unmatched_s = self.fnb_results['unmatched_statement'].copy()
-                unmatched_s['source'] = 'FNB Workflow'
-                unmatched_s['category'] = 'Unmatched Statement'
-                all_transactions.append(unmatched_s)
-
-        # From Bidvest workflow
-        if self.bidvest_results:
-            if 'matched' in self.bidvest_results:
-                matched = self.bidvest_results['matched'].copy()
-                matched['source'] = 'Bidvest Workflow'
-                matched['category'] = 'Matched'
-                all_transactions.append(matched)
-
-            if 'unmatched_ledger' in self.bidvest_results:
-                unmatched_l = self.bidvest_results['unmatched_ledger'].copy()
-                unmatched_l['source'] = 'Bidvest Workflow'
-                unmatched_l['category'] = 'Unmatched Ledger'
-                all_transactions.append(unmatched_l)
-
-        # From Corporate workflow
-        if self.corporate_results:
-            if 'matched' in self.corporate_results:
-                matched = self.corporate_results['matched'].copy()
-                matched['source'] = 'Corporate Workflow'
-                matched['category'] = 'Matched'
-                all_transactions.append(matched)
-
-        # Combine all transactions
-        if not all_transactions:
-            return None
-
-        combined = pd.concat(all_transactions, ignore_index=True)
-
-        # Filter by category
-        if category == 'all':
-            return combined
-        elif category == 'matched':
-            return combined[combined['category'] == 'Matched']
-        elif category == 'unmatched_ledger':
-            return combined[combined['category'] == 'Unmatched Ledger']
-        elif category == 'unmatched_statement':
-            return combined[combined['category'] == 'Unmatched Statement']
-        elif category == 'split':
-            # Return split transactions from FNB results
-            if self.fnb_results and 'split_matches' in self.fnb_results:
-                splits = self.fnb_results['split_matches']
-                if splits and len(splits) > 0:
-                    # Convert split list to DataFrame for display
-                    split_data = []
-                    for i, split in enumerate(splits):
-                        split_type = split.get('split_type', 'Unknown')
-                        items_count = split.get('items_count', len(split.get('ledger_indices', [])))
-                        
-                        split_data.append({
-                            'Split #': i + 1,
-                            'Type': split_type.replace('_', ' ').title(),
-                            'Total Amount': split.get('total_amount', 0),
-                            'Statement Amount': split.get('statement_amount', 0),
-                            'Items Count': items_count,
-                            'Match %': f"{split.get('similarity', 0):.1f}%"
-                        })
-                    return pd.DataFrame(split_data)
-            return pd.DataFrame()
-        elif category == 'fuzzy':
-            # Filter for fuzzy matched transactions from Match_Type column
-            matched_df = combined[combined['category'] == 'Matched']
-            if 'Match_Type' in matched_df.columns:
-                return matched_df[matched_df['Match_Type'] == 'Fuzzy']
-            return pd.DataFrame()
-        elif category == 'foreign':
-            # Filter for foreign credits from Match_Type column
-            matched_df = combined[combined['category'] == 'Matched']
-            if 'Match_Type' in matched_df.columns:
-                return matched_df[matched_df['Match_Type'] == 'Foreign_Credit']
-            return pd.DataFrame()
-
-        return combined
-
-    def render_quick_stats(self):
-        """Render quick statistics cards with real data"""
-
-        # Aggregate data from all workflows
+    def _render_current_session_metrics(self):
+        """Render metrics for all workflows in current session"""
+        # Collect metrics from all workflows
         total_matched = 0
         total_unmatched = 0
-        total_processed = 0
-        success_rate = 0
-        avg_time = 0
+        workflow_data = []
 
-        # Get FNB results using the correct keys
-        if self.fnb_results:
-            # Count matched transactions
-            total_matched += self.fnb_results.get('total_matched', 0)
-            
-            # Count unmatched
-            total_unmatched += self.fnb_results.get('unmatched_ledger_count', 0)
-            total_unmatched += self.fnb_results.get('unmatched_statement_count', 0)
-            
-            # Total processed
-            if 'matched' in self.fnb_results and not self.fnb_results['matched'].empty:
-                total_processed += len(self.fnb_results['matched'])
-            total_processed += total_unmatched
-            
-            # Processing time if available
-            avg_time = self.fnb_results.get('processing_time', 0)
+        for wf_name, wf_config in self.WORKFLOWS.items():
+            results = st.session_state.get(wf_config['session_key'])
+            if results:
+                matched = results.get('total_matched', 0) or results.get('perfect_match_count', 0) + results.get('fuzzy_match_count', 0) + results.get('foreign_credits_count', 0)
+                unmatched_l = results.get('unmatched_ledger_count', 0) or len(results.get('unmatched_ledger', []))
+                unmatched_s = results.get('unmatched_statement_count', 0) or len(results.get('unmatched_statement', []))
+                unmatched = unmatched_l + unmatched_s
 
-        if self.bidvest_results and 'summary' in self.bidvest_results:
-            summary = self.bidvest_results['summary']
-            total_matched += summary.get('exact_matches', 0) + summary.get('grouped_matches', 0)
-            total_unmatched += summary.get('unmatched_ledger', 0) + summary.get('unmatched_statement', 0)
-            total_processed += summary.get('total_ledger', 0) + summary.get('total_statement', 0)
-            if 'processing_time' in summary:
-                avg_time = summary['processing_time']
+                total_matched += matched
+                total_unmatched += unmatched
 
-        if total_processed > 0:
-            success_rate = round((total_matched / (total_matched + total_unmatched)) * 100, 1)
+                workflow_data.append({
+                    'name': wf_name,
+                    'icon': wf_config['icon'],
+                    'color': wf_config['color'],
+                    'matched': matched,
+                    'unmatched': unmatched,
+                    'timestamp': results.get('timestamp', 'Recently')
+                })
 
-        # Compact metric cards
+        # Display summary metrics
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            st.metric("✅ Matched", f"{total_matched:,}", delta=None)
-
+            st.metric("✅ Total Matched", f"{total_matched:,}")
         with col2:
-            st.metric("❌ Unmatched", f"{total_unmatched:,}", delta=None)
-
+            st.metric("❌ Total Unmatched", f"{total_unmatched:,}")
         with col3:
-            st.metric("📊 Success Rate", f"{success_rate}%", delta=None)
-
+            total = total_matched + total_unmatched
+            rate = (total_matched / total * 100) if total > 0 else 0
+            st.metric("📊 Match Rate", f"{rate:.1f}%")
         with col4:
-            st.metric("⚡ Processing", f"{avg_time:.1f}s", delta=None)
+            st.metric("🔄 Active Workflows", len(workflow_data))
 
+        # Workflow breakdown
+        if workflow_data:
+            st.markdown("#### Workflow Breakdown")
+            cols = st.columns(len(workflow_data))
+            for i, wf in enumerate(workflow_data):
+                with cols[i]:
+                    wf_total = wf['matched'] + wf['unmatched']
+                    wf_rate = (wf['matched'] / wf_total * 100) if wf_total > 0 else 0
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, {wf['color']}22 0%, {wf['color']}11 100%);
+                                padding: 1rem; border-radius: 10px; border-left: 4px solid {wf['color']};">
+                        <h4 style="margin: 0;">{wf['icon']} {wf['name']}</h4>
+                        <p style="margin: 0.5rem 0 0 0; font-size: 1.5rem; font-weight: bold;">{wf['matched']:,}</p>
+                        <p style="margin: 0; color: #64748b; font-size: 0.85rem;">matched ({wf_rate:.0f}%)</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.info("📊 No reconciliation data in current session. Run a workflow to see metrics here.")
 
-    def render_match_distribution_chart(self):
-        """Render match distribution pie chart"""
-
-        st.markdown("**Match Distribution**")
-
-        # Aggregate match data from FNB results
-        perfect_matches = 0
-        fuzzy_matches = 0
-        foreign_credits = 0
-        split_matches = 0
+    def _render_match_distribution_chart(self):
+        """Render pie chart of match distribution"""
+        # Aggregate data
+        perfect = 0
+        fuzzy = 0
+        foreign = 0
+        split = 0
         unmatched = 0
 
-        if self.fnb_results:
-            perfect_matches = self.fnb_results.get('perfect_match_count', 0)
-            fuzzy_matches = self.fnb_results.get('fuzzy_match_count', 0)
-            foreign_credits = self.fnb_results.get('foreign_credits_count', 0)
-            split_matches = self.fnb_results.get('split_count', 0)
-            unmatched = self.fnb_results.get('unmatched_ledger_count', 0) + self.fnb_results.get('unmatched_statement_count', 0)
+        for wf_name, wf_config in self.WORKFLOWS.items():
+            results = st.session_state.get(wf_config['session_key'])
+            if results:
+                perfect += results.get('perfect_match_count', 0)
+                fuzzy += results.get('fuzzy_match_count', 0)
+                foreign += results.get('foreign_credits_count', 0)
+                split += len(results.get('split_matches', []))
+                unmatched += results.get('unmatched_ledger_count', 0) + results.get('unmatched_statement_count', 0)
 
-        if self.bidvest_results and 'summary' in self.bidvest_results:
-            summary = self.bidvest_results['summary']
-            perfect_matches += summary.get('exact_matches', 0)
-            split_matches += summary.get('grouped_matches', 0)
-            unmatched += summary.get('unmatched_ledger', 0) + summary.get('unmatched_statement', 0)
+        total = perfect + fuzzy + foreign + split + unmatched
 
-        if perfect_matches + fuzzy_matches + foreign_credits + split_matches + unmatched > 0:
-            data = {
-                'Type': ['Perfect Matches', 'Fuzzy Matches', 'Foreign Credits', 'Split Transactions', 'Unmatched'],
-                'Count': [perfect_matches, fuzzy_matches, foreign_credits, split_matches, unmatched]
-            }
+        if total > 0:
+            data = []
+            colors = []
+            if perfect > 0:
+                data.append({'Type': 'Perfect Match', 'Count': perfect})
+                colors.append('#10b981')
+            if fuzzy > 0:
+                data.append({'Type': 'Fuzzy Match', 'Count': fuzzy})
+                colors.append('#3b82f6')
+            if foreign > 0:
+                data.append({'Type': 'Foreign Credits', 'Count': foreign})
+                colors.append('#8b5cf6')
+            if split > 0:
+                data.append({'Type': 'Split Transactions', 'Count': split})
+                colors.append('#f59e0b')
+            if unmatched > 0:
+                data.append({'Type': 'Unmatched', 'Count': unmatched})
+                colors.append('#ef4444')
 
             df = pd.DataFrame(data)
-            df = df[df['Count'] > 0]  # Remove zero values
-
-            fig = px.pie(
-                df,
-                values='Count',
-                names='Type',
-                color='Type',
-                color_discrete_map={
-                    'Perfect Matches': '#10b981',
-                    'Fuzzy Matches': '#3b82f6',
-                    'Foreign Credits': '#8b5cf6',
-                    'Split Transactions': '#f59e0b',
-                    'Unmatched': '#ef4444'
-                },
-                hole=0.4
-            )
-
+            fig = px.pie(df, values='Count', names='Type', color='Type',
+                        color_discrete_sequence=colors, hole=0.4)
             fig.update_layout(
+                height=350,
+                margin=dict(t=20, b=20, l=20, r=20),
                 showlegend=True,
-                height=350,
-                margin=dict(t=30, b=0, l=0, r=0)
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2)
             )
-
+            fig.update_traces(textposition='inside', textinfo='value+percent')
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("📊 No reconciliation data yet. Run a workflow to see match distribution.")
+            st.markdown("""
+            <div class="no-data-message">
+                <p style="font-size: 2rem; margin: 0;">📊</p>
+                <p>No match data available yet</p>
+                <p style="font-size: 0.85rem;">Run a reconciliation to see the distribution</p>
+            </div>
+            """, unsafe_allow_html=True)
 
-    def render_reconciliation_trend(self):
-        """Render reconciliation trend chart"""
+    def _render_workflow_comparison_chart(self):
+        """Render bar chart comparing workflows"""
+        workflow_data = []
 
-        st.markdown("**Reconciliation Trend**")
+        for wf_name, wf_config in self.WORKFLOWS.items():
+            results = st.session_state.get(wf_config['session_key'])
+            if results:
+                matched = results.get('total_matched', 0) or (
+                    results.get('perfect_match_count', 0) +
+                    results.get('fuzzy_match_count', 0) +
+                    results.get('foreign_credits_count', 0)
+                )
+                unmatched = (results.get('unmatched_ledger_count', 0) +
+                           results.get('unmatched_statement_count', 0))
+                workflow_data.append({
+                    'Workflow': wf_name,
+                    'Matched': matched,
+                    'Unmatched': unmatched
+                })
 
-        # Get history data
-        history = st.session_state.get('reconciliation_history', [])
-
-        if len(history) > 0:
-            df = pd.DataFrame(history)
-
+        if workflow_data:
+            df = pd.DataFrame(workflow_data)
             fig = go.Figure()
-
-            fig.add_trace(go.Scatter(
-                x=df['date'],
-                y=df['matched'],
-                name='Matched',
-                mode='lines+markers',
-                line=dict(color='#10b981', width=3),
-                marker=dict(size=8)
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=df['date'],
-                y=df['unmatched'],
-                name='Unmatched',
-                mode='lines+markers',
-                line=dict(color='#ef4444', width=3),
-                marker=dict(size=8)
-            ))
-
+            fig.add_trace(go.Bar(name='Matched', x=df['Workflow'], y=df['Matched'],
+                                marker_color='#10b981'))
+            fig.add_trace(go.Bar(name='Unmatched', x=df['Workflow'], y=df['Unmatched'],
+                                marker_color='#ef4444'))
             fig.update_layout(
+                barmode='group',
                 height=350,
-                margin=dict(t=30, b=0, l=0, r=0),
-                hovermode='x unified',
-                xaxis_title="Date",
+                margin=dict(t=20, b=20, l=20, r=20),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2),
                 yaxis_title="Transactions"
             )
-
             st.plotly_chart(fig, use_container_width=True)
         else:
-            # Show sample trend
-            dates = pd.date_range(end=datetime.now(), periods=7, freq='D')
-            matched = [120, 135, 145, 150, 160, 155, 170]
-            unmatched = [30, 25, 20, 18, 15, 12, 10]
+            st.markdown("""
+            <div class="no-data-message">
+                <p style="font-size: 2rem; margin: 0;">📈</p>
+                <p>No workflow data to compare</p>
+                <p style="font-size: 0.85rem;">Run reconciliations across workflows to see comparison</p>
+            </div>
+            """, unsafe_allow_html=True)
 
-            df = pd.DataFrame({
-                'Date': dates,
-                'Matched': matched,
-                'Unmatched': unmatched
-            })
-
-            fig = go.Figure()
-
-            fig.add_trace(go.Scatter(
-                x=df['Date'],
-                y=df['Matched'],
-                name='Matched (Sample)',
-                mode='lines+markers',
-                line=dict(color='#10b981', width=3, dash='dot'),
-                marker=dict(size=8)
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=df['Date'],
-                y=df['Unmatched'],
-                name='Unmatched (Sample)',
-                mode='lines+markers',
-                line=dict(color='#ef4444', width=3, dash='dot'),
-                marker=dict(size=8)
-            ))
-
-            fig.update_layout(
-                height=350,
-                margin=dict(t=30, b=0, l=0, r=0),
-                hovermode='x unified',
-                xaxis_title="Date",
-                yaxis_title="Transactions"
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption("📈 Sample data shown. Run reconciliations to see your actual trends.")
-
-    def render_recent_activity(self):
-        """Render recent reconciliation activity"""
-
+    def _render_recent_activity(self):
+        """Render recent activity from all workflows"""
         activities = []
 
-        if self.fnb_results:
-            total_matched = self.fnb_results.get('total_matched', 0)
-            total_unmatched = self.fnb_results.get('unmatched_ledger_count', 0) + self.fnb_results.get('unmatched_statement_count', 0)
-            total_items = total_matched + total_unmatched
-            rate = round((total_matched / total_items * 100), 1) if total_items > 0 else 0
-            
-            activities.append({
-                'workflow': '🏦 FNB Workflow',
-                'time': self.fnb_results.get('timestamp', 'Recently'),
-                'matches': total_matched,
-                'rate': rate
-            })
+        for wf_name, wf_config in self.WORKFLOWS.items():
+            results = st.session_state.get(wf_config['session_key'])
+            if results:
+                matched = results.get('total_matched', 0) or (
+                    results.get('perfect_match_count', 0) +
+                    results.get('fuzzy_match_count', 0)
+                )
+                unmatched = (results.get('unmatched_ledger_count', 0) +
+                           results.get('unmatched_statement_count', 0))
+                total = matched + unmatched
+                rate = (matched / total * 100) if total > 0 else 0
 
-        if self.bidvest_results and 'summary' in self.bidvest_results:
-            summary = self.bidvest_results['summary']
-            total_matches = summary.get('exact_matches', 0) + summary.get('grouped_matches', 0)
-            total_items = summary.get('total_ledger', 0)
-            rate = round((total_matches / total_items * 100), 1) if total_items > 0 else 0
-
-            activities.append({
-                'workflow': '💼 Bidvest Workflow',
-                'time': 'Recently',
-                'matches': total_matches,
-                'rate': rate
-            })
+                activities.append({
+                    'workflow': wf_name,
+                    'icon': wf_config['icon'],
+                    'color': wf_config['color'],
+                    'matched': matched,
+                    'rate': rate,
+                    'timestamp': results.get('timestamp', datetime.now().strftime('%Y-%m-%d %H:%M'))
+                })
 
         if activities:
             for act in activities:
                 st.markdown(f"""
-                <div class="workflow-card">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <h4 style="margin: 0;">{act['workflow']}</h4>
-                            <p style="margin: 0.25rem 0 0 0; color: #6b7280; font-size: 0.9rem;">
-                                {act['time']}
-                            </p>
-                        </div>
-                        <div style="text-align: right;">
-                            <p style="margin: 0; font-size: 1.5rem; font-weight: bold; color: #10b981;">
-                                {act['matches']:,}
-                            </p>
-                            <p style="margin: 0; color: #6b7280; font-size: 0.85rem;">
-                                {act['rate']}% match rate
-                            </p>
-                        </div>
+                <div class="activity-item" style="border-left-color: {act['color']};">
+                    <div style="flex: 1;">
+                        <strong>{act['icon']} {act['workflow']}</strong>
+                        <span style="color: #64748b; margin-left: 1rem; font-size: 0.85rem;">{act['timestamp']}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="font-size: 1.25rem; font-weight: bold; color: #10b981;">{act['matched']:,}</span>
+                        <span style="color: #64748b; margin-left: 0.5rem;">({act['rate']:.0f}% match)</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.info("📋 No recent activity. Start a reconciliation workflow to see your activity here.")
+            st.info("📋 No recent activity. Run a reconciliation to see activity here.")
 
-    def render_audit_trail(self):
-        """Render audit trail of user actions"""
-        audit_trail = st.session_state.get('audit_trail', [])
-        
-        if audit_trail:
-            # Show last 5 entries
-            recent_audits = audit_trail[-5:]
-            
-            for audit in reversed(recent_audits):
-                action_icon = {
-                    'SAVE_RESULTS': '💾',
-                    'RUN_RECONCILIATION': '▶️',
-                    'EXPORT_DATA': '📥',
-                    'DELETE_RESULT': '🗑️',
-                    'EDIT_DATA': '✏️'
-                }.get(audit['action'], '📌')
-                
-                with st.container():
-                    st.markdown(f"""
-                    <div style="padding: 0.75rem; background: #f9fafb; border-radius: 8px; margin: 0.5rem 0; border-left: 3px solid #667eea;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <div>
-                                <span style="font-size: 1.1rem;">{action_icon}</span>
-                                <strong>{audit['action'].replace('_', ' ').title()}</strong>
-                            </div>
-                            <span style="color: #6b7280; font-size: 0.85rem;">{audit['timestamp']}</span>
-                        </div>
-                        <div style="margin-top: 0.25rem; color: #6b7280; font-size: 0.85rem;">
-                            User: {audit.get('user', 'N/A')} | Workflow: {audit.get('workflow', 'N/A')}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            if st.button("📖 View Full Audit Log", key='view_full_audit'):
-                with st.expander("Complete Audit Trail", expanded=True):
-                    audit_df = pd.DataFrame(audit_trail)
-                    st.dataframe(audit_df, use_container_width=True, height=300)
-                    
-                    # Export audit log
-                    st.download_button(
-                        "📥 Export Audit Log",
-                        audit_df.to_csv(index=False),
-                        f"audit_trail_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        "text/csv"
-                    )
+    def _render_session_history(self):
+        """Render session history with filters"""
+        st.markdown("""
+        <div class="dashboard-header" style="background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);">
+            <h1>📜 Session History</h1>
+            <p>View and manage all historical reconciliation sessions</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Filters
+        col1, col2, col3 = st.columns([2, 2, 1])
+
+        with col1:
+            workflow_filter = st.selectbox(
+                "Filter by Workflow",
+                ["All", "FNB", "ABSA", "Kazang", "Bidvest", "Corporate"],
+                key="hist_workflow_filter"
+            )
+
+        with col2:
+            limit = st.selectbox(
+                "Show Records",
+                [10, 25, 50, 100],
+                key="hist_limit"
+            )
+
+        with col3:
+            st.write("")  # Spacer
+            refresh = st.button("🔄 Refresh", key="hist_refresh", use_container_width=True)
+
+        # Get sessions
+        sessions = self._get_sessions(
+            workflow_type=workflow_filter if workflow_filter != "All" else None,
+            limit=limit
+        )
+
+        if sessions:
+            st.success(f"📊 Found {len(sessions)} session(s)")
+
+            for session in sessions:
+                self._render_session_card(session)
         else:
-            st.info("📋 No audit entries yet. Actions will be logged here.")
+            st.markdown("""
+            <div class="no-data-message">
+                <p style="font-size: 3rem; margin: 0;">📭</p>
+                <h3>No Sessions Found</h3>
+                <p>Run a reconciliation and save results to see history here.</p>
+                <p style="font-size: 0.85rem; color: #94a3b8;">
+                    Use the "Save Results to Database" button after running any workflow.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
 
-    def render_tips(self):
-        """Render helpful tips and shortcuts"""
+    def _get_sessions(self, workflow_type: Optional[str] = None, limit: int = 50) -> List[Dict]:
+        """Get sessions from database or local storage"""
+        # Try Supabase first
+        if self.db and self.db.is_enabled():
+            try:
+                return self.db.get_session_history(workflow_type=workflow_type, limit=limit)
+            except Exception as e:
+                st.warning(f"Could not load from database: {e}")
 
-        with st.expander("💡 Tips & Best Practices"):
-            col1, col2 = st.columns(2)
+        # Fallback to local sessions
+        if 'local_sessions' not in st.session_state:
+            return []
+
+        sessions = list(st.session_state.local_sessions.values())
+
+        if workflow_type:
+            sessions = [s for s in sessions if s.get("workflow_type") == workflow_type]
+
+        sessions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return sessions[:limit]
+
+    def _render_session_card(self, session: Dict):
+        """Render a single session card"""
+        session_id = session.get("id", "")
+        session_name = session.get("session_name", "Unnamed Session")
+        workflow_type = session.get("workflow_type", "Unknown")
+        status = session.get("status", "unknown")
+        created_at = session.get("created_at", "")
+
+        # Get workflow config
+        wf_config = self.WORKFLOWS.get(workflow_type, {'icon': '📋', 'color': '#64748b'})
+
+        # Parse date
+        date_str = self._format_datetime(created_at)
+
+        # Get metrics
+        total_matched = session.get("total_matched", 0)
+        total_unmatched_ledger = session.get("total_unmatched_ledger", 0)
+        total_unmatched_statement = session.get("total_unmatched_statement", 0)
+        match_rate = session.get("match_rate", 0)
+
+        with st.container():
+            st.markdown(f"""
+            <div class="session-card" style="border-left: 4px solid {wf_config['color']};">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <div>
+                        <span style="font-size: 1.5rem;">{wf_config['icon']}</span>
+                        <strong style="font-size: 1.1rem; margin-left: 0.5rem;">{session_name}</strong>
+                        <span class="workflow-badge" style="background: {wf_config['color']}22; color: {wf_config['color']}; margin-left: 0.5rem;">
+                            {workflow_type}
+                        </span>
+                    </div>
+                    <span style="color: #64748b; font-size: 0.9rem;">{date_str}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
 
             with col1:
-                st.markdown("""
-                **🚀 Quick Workflow Selection:**
-                - Use the workflow selector from sidebar
-                - Or click quick action buttons above
-                - Keyboard shortcut: Navigate with Tab
-
-                **📁 Data Preparation:**
-                - Ensure clean date formats
-                - Remove special characters from amounts
-                - Use consistent column headers
-                """)
-
+                st.metric("Matched", f"{total_matched:,}")
             with col2:
-                st.markdown("""
-                **🎯 Matching Tips:**
-                - FNB: Adjust similarity threshold (default 85%)
-                - Bidvest: Verify Date+1 logic is correct
-                - Corporate: Set proper tolerance parameters
+                st.metric("Unmatched (L)", f"{total_unmatched_ledger:,}")
+            with col3:
+                st.metric("Unmatched (S)", f"{total_unmatched_statement:,}")
+            with col4:
+                st.metric("Match Rate", f"{match_rate:.1f}%")
+            with col5:
+                if st.button("📥 Download", key=f"dl_{session_id[:8]}", use_container_width=True):
+                    st.session_state.download_session_id = session_id
+                    st.session_state.dash_view = 'download'
 
-                **📊 Export Options:**
-                - Download individual result sheets (CSV)
-                - Or complete Excel workbook with all sheets
-                - Results show all columns side-by-side
-                """)
+    def _render_batch_downloads(self):
+        """Render batch download section"""
+        st.markdown("""
+        <div class="dashboard-header" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%);">
+            <h1>📥 Batch Downloads</h1>
+            <p>Download reconciliation results from any session</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-        with st.expander("❓ Need Help?"):
-            st.markdown("""
-            **Common Questions:**
+        # Current session downloads
+        st.subheader("📊 Download from Current Session")
 
-            1. **How do I run a reconciliation?**
-               - Select a workflow from the sidebar or dashboard
-               - Upload your ledger and statement files
-               - Configure column mappings
-               - Click "Start Reconciliation"
+        available_downloads = []
+        for wf_name, wf_config in self.WORKFLOWS.items():
+            results = st.session_state.get(wf_config['session_key'])
+            if results:
+                available_downloads.append({
+                    'name': wf_name,
+                    'icon': wf_config['icon'],
+                    'color': wf_config['color'],
+                    'results': results
+                })
 
-            2. **What file formats are supported?**
-               - Excel (.xlsx, .xls)
-               - CSV (.csv)
+        if available_downloads:
+            cols = st.columns(len(available_downloads))
+            for i, dl in enumerate(available_downloads):
+                with cols[i]:
+                    self._render_download_card(dl['name'], dl['icon'], dl['color'], dl['results'])
+        else:
+            st.info("📊 No reconciliation results in current session. Run a workflow first.")
 
-            3. **How are matches determined?**
-               - FNB: Weighted scoring (Date 30%, Reference 40%, Amount 30%)
-               - Bidvest: Date+1 exact match + grouped matches
-               - Corporate: 5-tier batch system
+        st.markdown("---")
 
-            4. **Can I save my results?**
-               - Yes! Use the "Export" buttons to download results
-               - Save as CSV (individual sheets) or Excel (complete workbook)
+        # Historical downloads
+        st.subheader("📜 Download from History")
 
-            For more help, contact support or check the documentation.
-            """)
+        # Get recent sessions
+        sessions = self._get_sessions(limit=10)
+
+        if sessions:
+            selected_session = st.selectbox(
+                "Select a session to download",
+                options=sessions,
+                format_func=lambda x: f"{x.get('workflow_type', 'Unknown')} - {x.get('session_name', 'Unnamed')} ({self._format_datetime(x.get('created_at', ''))})",
+                key="download_session_select"
+            )
+
+            if selected_session:
+                session_id = selected_session.get('id')
+                st.info(f"📋 Session ID: {session_id[:8]}...")
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    if st.button("📥 Download Matched", key="dl_matched_hist", use_container_width=True, type="primary"):
+                        self._download_session_data(session_id, 'matched')
+
+                with col2:
+                    if st.button("📥 Download Unmatched", key="dl_unmatched_hist", use_container_width=True):
+                        self._download_session_data(session_id, 'unmatched')
+
+                with col3:
+                    if st.button("📥 Download All", key="dl_all_hist", use_container_width=True):
+                        self._download_session_data(session_id, 'all')
+        else:
+            st.info("📭 No historical sessions available. Save a reconciliation result to enable downloads.")
+
+    def _render_download_card(self, workflow_name: str, icon: str, color: str, results: Dict):
+        """Render download card for a workflow"""
+        matched_count = results.get('total_matched', 0) or len(results.get('matched', []))
+        unmatched_count = (results.get('unmatched_ledger_count', 0) +
+                         results.get('unmatched_statement_count', 0))
+
+        st.markdown(f"""
+        <div style="background: {color}11; padding: 1rem; border-radius: 10px; border: 1px solid {color}33; text-align: center;">
+            <p style="font-size: 2rem; margin: 0;">{icon}</p>
+            <h4 style="margin: 0.5rem 0;">{workflow_name}</h4>
+            <p style="color: #64748b; margin: 0; font-size: 0.85rem;">
+                {matched_count:,} matched | {unmatched_count:,} unmatched
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Download buttons
+        col1, col2 = st.columns(2)
+
+        with col1:
+            matched_df = results.get('matched')
+            if matched_df is not None and len(matched_df) > 0:
+                csv = matched_df.to_csv(index=False)
+                st.download_button(
+                    "📥 Matched",
+                    csv,
+                    f"{workflow_name}_matched_{datetime.now().strftime('%Y%m%d')}.csv",
+                    "text/csv",
+                    key=f"dl_matched_{workflow_name}",
+                    use_container_width=True
+                )
+
+        with col2:
+            # Combine unmatched
+            unmatched_l = results.get('unmatched_ledger', pd.DataFrame())
+            unmatched_s = results.get('unmatched_statement', pd.DataFrame())
+
+            if (isinstance(unmatched_l, pd.DataFrame) and len(unmatched_l) > 0) or \
+               (isinstance(unmatched_s, pd.DataFrame) and len(unmatched_s) > 0):
+
+                # Create combined unmatched CSV
+                csv_parts = []
+                if isinstance(unmatched_l, pd.DataFrame) and len(unmatched_l) > 0:
+                    csv_parts.append("UNMATCHED LEDGER")
+                    csv_parts.append(unmatched_l.to_csv(index=False))
+                if isinstance(unmatched_s, pd.DataFrame) and len(unmatched_s) > 0:
+                    csv_parts.append("\nUNMATCHED STATEMENT")
+                    csv_parts.append(unmatched_s.to_csv(index=False))
+
+                st.download_button(
+                    "📥 Unmatched",
+                    "\n".join(csv_parts),
+                    f"{workflow_name}_unmatched_{datetime.now().strftime('%Y%m%d')}.csv",
+                    "text/csv",
+                    key=f"dl_unmatched_{workflow_name}",
+                    use_container_width=True
+                )
+
+    def _download_session_data(self, session_id: str, data_type: str):
+        """Download data from a historical session"""
+        if not self.db or not self.db.is_enabled():
+            # Try local session
+            if 'local_sessions' in st.session_state and session_id in st.session_state.local_sessions:
+                session_data = st.session_state.local_sessions[session_id]
+                st.info("📥 Preparing download from local storage...")
+                # Create download
+                if data_type == 'matched':
+                    data = session_data.get('matched', [])
+                    if data:
+                        df = pd.DataFrame(data)
+                        st.download_button(
+                            "📥 Download Now",
+                            df.to_csv(index=False),
+                            f"matched_{session_id[:8]}.csv",
+                            "text/csv"
+                        )
+                    else:
+                        st.warning("No matched data found")
+            else:
+                st.warning("Session not found in local storage")
+            return
+
+        try:
+            session_details = self.db.get_session_details(session_id)
+            if session_details:
+                st.success("📥 Data loaded! Click below to download.")
+
+                if data_type in ['matched', 'all']:
+                    matched = session_details.get('matched_transactions', [])
+                    if matched:
+                        df = pd.DataFrame(matched)
+                        st.download_button(
+                            "📥 Download Matched Transactions",
+                            df.to_csv(index=False),
+                            f"matched_{session_id[:8]}.csv",
+                            "text/csv",
+                            key=f"dl_m_{session_id[:8]}"
+                        )
+
+                if data_type in ['unmatched', 'all']:
+                    unmatched = session_details.get('unmatched_transactions', [])
+                    if unmatched:
+                        df = pd.DataFrame(unmatched)
+                        st.download_button(
+                            "📥 Download Unmatched Transactions",
+                            df.to_csv(index=False),
+                            f"unmatched_{session_id[:8]}.csv",
+                            "text/csv",
+                            key=f"dl_u_{session_id[:8]}"
+                        )
+            else:
+                st.error("Could not load session details")
+
+        except Exception as e:
+            st.error(f"Error loading session: {e}")
+
+    def _format_datetime(self, dt_value) -> str:
+        """Format datetime for display"""
+        if not dt_value:
+            return "Unknown"
+        try:
+            if isinstance(dt_value, str):
+                dt = datetime.fromisoformat(dt_value.replace("Z", "+00:00"))
+                return dt.strftime("%Y-%m-%d %H:%M")
+            return str(dt_value)
+        except:
+            return str(dt_value)
+
+
+# Convenience function for backward compatibility
+def render_session_history():
+    """Render just the session history section"""
+    dashboard = Dashboard()
+    dashboard._render_session_history()
