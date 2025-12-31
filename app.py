@@ -302,7 +302,11 @@ def show_main_app():
             st.info("ℹ️ Authentication active")
         
         st.markdown("---")
-        
+
+        # Settings button
+        if st.button("⚙️ Settings", use_container_width=True, key="sidebar_settings"):
+            st.session_state.show_settings = True
+
         # Logout button
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.session.logout()
@@ -310,9 +314,13 @@ def show_main_app():
 
     # Load persistent data after authentication (lazy loading)
     load_persistent_data()
-    
-    # Show workflows page directly
-    show_workflows_page()
+
+    # Check if settings should be shown
+    if st.session_state.get('show_settings', False):
+        show_settings_page()
+    else:
+        # Show workflows page directly
+        show_workflows_page()
 
 def show_workflows_page():
     """Specialized workflows page - Display all workflows with Dashboard"""
@@ -802,55 +810,108 @@ def show_reports_page():
     st.info("📊 Analytics dashboard coming soon!")
 
 def show_settings_page():
-    """Application settings"""
+    """Application settings with password change functionality"""
+
+    # Back button
+    col1, col2 = st.columns([1, 5])
+    with col1:
+        if st.button("← Back", key="settings_back"):
+            st.session_state.show_settings = False
+            st.rerun()
 
     st.markdown("""
     <div class="gradient-header">
         <h1>⚙️ Settings</h1>
-        <p>Customize your BARD-RECO experience</p>
+        <p>Manage your account and preferences</p>
     </div>
     """, unsafe_allow_html=True)
 
-    tabs = st.tabs(["👤 Profile", "🔒 Security", "🎨 Appearance", "📧 Notifications"])
+    tabs = st.tabs(["🔒 Change Password", "👤 Profile"])
 
     with tabs[0]:
-        st.markdown("### 👤 Profile Settings")
-        username = st.text_input("Username", value=st.session_state.session.username, disabled=True)
-        email = st.text_input("Email", placeholder="your.email@company.com")
-        company = st.text_input("Company", placeholder="Your Company Name")
+        st.markdown("### 🔒 Change Your Password")
+        st.info("💡 Choose a strong password with at least 6 characters.")
 
-        if st.button("💾 Save Profile"):
-            st.success("✅ Profile updated successfully!")
+        # Get current username
+        current_user = st.session_state.session.username
+
+        # Password change form
+        with st.form("password_change_form"):
+            current_password = st.text_input(
+                "Current Password",
+                type="password",
+                placeholder="Enter your current password"
+            )
+            new_password = st.text_input(
+                "New Password",
+                type="password",
+                placeholder="Enter new password (min 6 characters)"
+            )
+            confirm_password = st.text_input(
+                "Confirm New Password",
+                type="password",
+                placeholder="Confirm your new password"
+            )
+
+            submitted = st.form_submit_button("🔐 Change Password", use_container_width=True, type="primary")
+
+            if submitted:
+                # Validate inputs
+                if not current_password:
+                    st.error("❌ Please enter your current password")
+                elif not new_password:
+                    st.error("❌ Please enter a new password")
+                elif len(new_password) < 6:
+                    st.error("❌ New password must be at least 6 characters")
+                elif new_password != confirm_password:
+                    st.error("❌ New passwords don't match!")
+                elif new_password == current_password:
+                    st.error("❌ New password must be different from current password")
+                else:
+                    # Try to change password
+                    try:
+                        auth = Authentication()
+                        success = auth.change_password(current_user, current_password, new_password)
+
+                        if success:
+                            st.success("✅ Password changed successfully! Please use your new password next time you log in.")
+                            st.balloons()
+                        else:
+                            st.error("❌ Current password is incorrect. Please try again.")
+                    except Exception as e:
+                        st.error(f"❌ Error changing password: {str(e)}")
+
+        # Password requirements
+        st.markdown("""
+        ---
+        **Password Requirements:**
+        - Minimum 6 characters
+        - Different from current password
+        """)
 
     with tabs[1]:
-        st.markdown("### 🔒 Security Settings")
-        st.markdown("#### Change Password")
-        old_password = st.text_input("Current Password", type="password")
-        new_password = st.text_input("New Password", type="password")
-        confirm_new_password = st.text_input("Confirm New Password", type="password")
+        st.markdown("### 👤 Profile Information")
 
-        if st.button("🔐 Update Password"):
-            if new_password == confirm_new_password:
-                st.success("✅ Password updated successfully!")
-            else:
-                st.error("❌ Passwords don't match!")
+        # Display user info
+        col1, col2 = st.columns(2)
 
-    with tabs[2]:
-        st.markdown("### 🎨 Appearance")
-        theme = st.selectbox("Theme", ["Light", "Dark", "Auto"])
-        language = st.selectbox("Language", ["English", "Spanish", "French", "German"])
+        with col1:
+            st.text_input("Username", value=current_user, disabled=True)
 
-        if st.button("🎨 Apply Settings"):
-            st.success("✅ Appearance settings updated!")
+        with col2:
+            # Get user info from database
+            try:
+                auth = Authentication()
+                user_info = auth.get_user_info(current_user)
+                if user_info:
+                    st.text_input("Email", value=user_info.get('email', 'N/A'), disabled=True)
+                    st.text_input("Role", value=user_info.get('role', 'user').title(), disabled=True)
+                    st.text_input("Full Name", value=user_info.get('full_name', 'N/A'), disabled=True)
+            except:
+                st.info("Profile information not available")
 
-    with tabs[3]:
-        st.markdown("### 📧 Notifications")
-        email_notifications = st.checkbox("Email Notifications", value=True)
-        reconciliation_complete = st.checkbox("Reconciliation Complete", value=True)
-        daily_summary = st.checkbox("Daily Summary", value=False)
-
-        if st.button("📧 Save Notification Settings"):
-            st.success("✅ Notification preferences saved!")
+        st.markdown("---")
+        st.caption("Contact your administrator to update profile information.")
 
 # Initialize persistent data ONLY after authentication
 def load_persistent_data():

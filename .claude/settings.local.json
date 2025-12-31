@@ -6,7 +6,9 @@
       "Bash(dir:*)",
       "Bash(cd:*)",
       "Bash(C:UsersTatendaanaconda3envsMASTERpython.exe -c \"import sys; print(f''Python: {sys.version}''); import flask; print(f''Flask: {flask.__version__}'')\")",
-      "Bash(C:UsersTatendaanaconda3envsMASTERpython.exe -c \"import flask; print(''Flask OK'')\")"
+      "Bash(C:UsersTatendaanaconda3envsMASTERpython.exe -c \"import flask; print(''Flask OK'')\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Complete Dashboard modernization with all workflows support\n\nMajor improvements:\n- Added support for ALL 5 workflows: FNB, ABSA, Kazang, Bidvest, Corporate\n- New tabbed interface: Overview | Session History | Batch Downloads\n- Real-time metrics aggregation across all active workflows\n- Professional workflow breakdown cards with color coding\n- Match distribution pie chart \\(Perfect, Fuzzy, Foreign, Split, Unmatched\\)\n- Workflow comparison bar chart\n- Recent activity feed tracking all workflows\n- Session history with filtering by workflow type\n- Batch downloads from current session or historical sessions\n- Direct CSV download buttons for matched/unmatched data\n- Modern CSS styling with gradients and shadows\n- Removed all unnecessary st.rerun\\(\\) calls to prevent flickering\n- Backward compatible render_session_history\\(\\) function\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)"
     ],
     "deny": [],
     "ask": []
