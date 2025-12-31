@@ -330,10 +330,10 @@ class FNBWorkflow:
             def extract_reference_name(description):
                 """Extract reference names from banking transaction descriptions"""
                 desc = str(description).strip()
-                
+
                 # Known location codes that should be stripped from names
                 location_codes = {'GAU', 'BAY', 'ST', 'STR', 'SB', 'SHOP', 'RD', 'RRD', 'PL', 'AVE', 'MAIN', 'PARK'}
-                
+
                 def strip_location_codes(text):
                     """Remove leading location codes from a string"""
                     words = text.split()
@@ -343,21 +343,50 @@ class FNBWorkflow:
 
                 # Pattern-based extraction for common transaction types
                 patterns = [
-                    # Phone number only (9-10 digits) - High priority
+                    # ===== PHONE NUMBER + NAME PATTERNS (High Priority) =====
+                    # Pattern: 10-digit phone number followed directly by name (no space)
+                    # Examples: "0795272164mkethwa" → "mkethwa", "0834988609NDUMISO" → "NDUMISO"
+                    (r'^0\d{9}([a-zA-Z][a-zA-Z\s]+)$', lambda m: m.group(1).strip()),
+
+                    # Pattern: 10-digit phone number followed by name with space
+                    # Examples: "0726345433sharon nyathi" → "sharon nyathi" (handles both with/without space)
+                    (r'^0\d{9}\s*([a-zA-Z][a-zA-Z\s]+)$', lambda m: m.group(1).strip()),
+
+                    # ===== BANK NAME + REFERENCE PATTERNS =====
+                    # ABSA BANK [NAME] - handles multiple spaces
+                    (r'ABSA\s+BANK\s+(.+)', lambda m: m.group(1).strip()),
+                    (r'ABSA BANK\s+(.+)', lambda m: m.group(1).strip()),
+
+                    # CAPITEC [NAME] - handles multiple spaces between CAPITEC and name
+                    (r'CAPITEC\s+(.+)', lambda m: m.group(1).strip()),
+
+                    # NEDBANK [NAME]
+                    (r'NEDBANK\s+(.+)', lambda m: m.group(1).strip()),
+
+                    # Standard Bank [NAME]
+                    (r'STANDARD BANK\s+(.+)', lambda m: m.group(1).strip()),
+
+                    # FNB [NAME]
+                    (r'FNB\s+BANK\s+(.+)', lambda m: m.group(1).strip()),
+
+                    # ===== PHONE NUMBER ONLY PATTERNS =====
+                    # Phone number only (9-10 digits) - extract as-is
                     (r'^(\d{9,10})$', lambda m: m.group(1)),
-                    
+
                     # Any number sequence (for references like 100319841, 1234, etc.)
                     (r'^(\d+)$', lambda m: m.group(1)),
-                    
+
+                    # ===== FNB SPECIFIC PATTERNS =====
                     # FNB OB PMT [NAME] - FNB Online Banking Payment
                     (r'FNB OB PMT\s+(.+)', lambda m: m.group(1).strip()),
-                    
+
                     # FNB APP PAYMENT FROM [NAME]
                     (r'FNB APP PAYMENT FROM\s+(.+)', lambda m: m.group(1).strip()),
-                    
+
                     # CELL PMNT FROM [NAME] - Cell phone payment
                     (r'CELL PMNT FROM\s+(.+)', lambda m: m.group(1).strip()),
 
+                    # ===== ADT CASH DEPO PATTERNS =====
                     # ADT CASH DEPO variations - Extract reference after location code
                     # Pattern: ADT CASH DEPO + 8-digit code + reference
                     (r'ADT CASH DEPO\d{8}\s+(.+)', lambda m: strip_location_codes(m.group(1))),
@@ -370,24 +399,13 @@ class FNBWorkflow:
                     (r'ADT CASH DEPOSIT\s+(.+)', lambda m: strip_location_codes(m.group(1))),
                     (r'ADT CASH DEPO\s+(.+)', lambda m: strip_location_codes(m.group(1))),  # Generic fallback
 
-                    # CAPITEC [NAME]
-                    (r'CAPITEC\s+(.+)', lambda m: m.group(1).strip()),
-
-                    # ABSA BANK [NAME]
-                    (r'ABSA BANK\s+(.+)', lambda m: m.group(1).strip()),
-
-                    # NEDBANK [NAME]
-                    (r'NEDBANK\s+(.+)', lambda m: m.group(1).strip()),
-
-                    # Standard Bank [NAME]
-                    (r'STANDARD BANK\s+(.+)', lambda m: m.group(1).strip()),
-
+                    # ===== GENERIC NAME PATTERNS =====
                     # Direct names with numbers (e.g., "namthoko 2", "john 123")
                     (r'^([a-zA-Z]+(?:\s+\d+)?)\s*$', lambda m: m.group(1).strip()),
-                    
+
                     # Direct names (capitalized words)
                     (r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[a-z]+)$', lambda m: m.group(1).strip()),
-                    
+
                     # Special characters + text (e.g., *Beds)
                     (r'^([*#@]?[A-Za-z]+\d*)\s*$', lambda m: m.group(1).strip()),
                 ]
@@ -493,19 +511,65 @@ class FNBWorkflow:
                     })
                 st.dataframe(pd.DataFrame(sample_data), use_container_width=True)
 
-            # Only one rerun needed after modifying session state
+            # Rerun to update UI with new columns
+            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Error adding reference: {str(e)}")
 
     def nedbank_processing_tool(self):
-        """Process Nedbank-specific statement formatting"""
+        """Process Nedbank-specific statement formatting with reference extraction"""
         try:
+            import re
             statement = st.session_state.fnb_statement.copy()
 
-            # Nedbank-specific processing (customize as needed)
+            # Nedbank-specific processing with advanced reference extraction
             if 'Description' in statement.columns:
-                statement['Processed_Ref'] = statement['Description'].astype(str).str.strip()
+                def extract_nedbank_reference(description):
+                    """Extract reference names from Nedbank statement descriptions"""
+                    desc = str(description).strip()
+
+                    # Pattern-based extraction for Nedbank formats
+                    patterns = [
+                        # Phone number (10 digits starting with 0) followed by name
+                        # Examples: "0795272164mkethwa" → "mkethwa", "0726345433sharon nyathi" → "sharon nyathi"
+                        (r'^0\d{9}([a-zA-Z][a-zA-Z\s]+)$', lambda m: m.group(1).strip()),
+                        (r'^0\d{9}\s*([a-zA-Z][a-zA-Z\s]+)$', lambda m: m.group(1).strip()),
+
+                        # ABSA BANK [NAME] - handles multiple spaces
+                        (r'ABSA\s+BANK\s+(.+)', lambda m: m.group(1).strip()),
+                        (r'ABSA BANK\s+(.+)', lambda m: m.group(1).strip()),
+
+                        # CAPITEC [NAME] - handles multiple spaces
+                        (r'CAPITEC\s+(.+)', lambda m: m.group(1).strip()),
+
+                        # NEDBANK [NAME]
+                        (r'NEDBANK\s+(.+)', lambda m: m.group(1).strip()),
+
+                        # STANDARD BANK [NAME]
+                        (r'STANDARD BANK\s+(.+)', lambda m: m.group(1).strip()),
+
+                        # FNB [NAME]
+                        (r'FNB\s+BANK\s+(.+)', lambda m: m.group(1).strip()),
+                        (r'FNB\s+(.+)', lambda m: m.group(1).strip()),
+                    ]
+
+                    # Try each pattern
+                    for pattern, extractor in patterns:
+                        match = re.search(pattern, desc, re.IGNORECASE)
+                        if match:
+                            try:
+                                result = extractor(match)
+                                if result:
+                                    return result.strip()
+                            except Exception:
+                                continue
+
+                    # Fallback: return original description stripped
+                    return desc
+
+                # Apply extraction to all descriptions
+                statement['Processed_Ref'] = statement['Description'].apply(extract_nedbank_reference)
                 st.session_state.fnb_statement = statement
 
                 # Mark column cache as dirty
@@ -515,7 +579,15 @@ class FNBWorkflow:
                 if 'fnb_saved_selections' in st.session_state:
                     del st.session_state.fnb_saved_selections
 
-                st.success("✅ Nedbank processing complete - Added Processed_Ref column")
+                st.success("✅ Nedbank processing complete - Added Processed_Ref column with extracted references")
+
+                # Show sample extractions
+                with st.expander("📋 Sample Extractions (First 10)"):
+                    sample_df = statement[['Description', 'Processed_Ref']].head(10)
+                    st.dataframe(sample_df, use_container_width=True)
+
+                # Rerun to update UI with new columns
+                st.rerun()
             else:
                 st.info("Statement format not recognized for Nedbank processing")
 
@@ -609,6 +681,9 @@ class FNBWorkflow:
 
             st.success("✅ Added RJ-Number and Payment Ref columns to ledger")
             st.dataframe(ledger[['RJ-Number', 'Payment Ref']].head(10), use_container_width=True)
+
+            # Rerun to update UI with new columns
+            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Error generating RJ & Payment Ref: {str(e)}")
