@@ -78,8 +78,67 @@ class SupabaseAuthentication:
             # Don't show error here - handled by hybrid_auth
 
     def _hash_password(self, password: str) -> str:
-        """Hash password using SHA-256"""
-        return hashlib.sha256(password.encode()).hexdigest()
+        """Hash password using scrypt (compatible with existing database)"""
+        import secrets
+        import base64
+
+        # Generate salt
+        salt = secrets.token_hex(16)
+
+        # Use scrypt with same parameters as existing hashes (32768:8:1)
+        key = hashlib.scrypt(
+            password.encode(),
+            salt=salt.encode(),
+            n=32768,
+            r=8,
+            p=1,
+            dklen=64
+        )
+
+        # Format: scrypt:n:r:p$salt$hash
+        hash_b64 = base64.b64encode(key).decode('ascii')
+        return f"scrypt:32768:8:1${salt}${hash_b64}"
+
+    def _verify_password(self, password: str, stored_hash: str) -> bool:
+        """Verify password against stored scrypt hash"""
+        import base64
+
+        try:
+            # Handle SHA-256 hashes (old format - 64 char hex)
+            if len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash.lower()):
+                return hashlib.sha256(password.encode()).hexdigest() == stored_hash
+
+            # Parse scrypt hash format: scrypt:n:r:p$salt$hash
+            if stored_hash.startswith('scrypt:'):
+                parts = stored_hash.split('$')
+                if len(parts) != 3:
+                    return False
+
+                params = parts[0].split(':')  # scrypt:32768:8:1
+                n = int(params[1])
+                r = int(params[2])
+                p = int(params[3])
+                salt = parts[1]
+                stored_key_b64 = parts[2]
+
+                # Compute hash with same parameters
+                computed_key = hashlib.scrypt(
+                    password.encode(),
+                    salt=salt.encode(),
+                    n=n,
+                    r=r,
+                    p=p,
+                    dklen=64
+                )
+
+                computed_b64 = base64.b64encode(computed_key).decode('ascii')
+                return computed_b64 == stored_key_b64
+
+            return False
+
+        except Exception as e:
+            print(f"Password verification error: {e}")
+            return False
 
     def _is_email_allowed(self, email: str) -> bool:
         """Check if email domain is allowed"""
@@ -90,22 +149,23 @@ class SupabaseAuthentication:
     def _create_default_admin(self):
         """Create default admin account if it doesn't exist"""
         try:
-            # Check if admin exists
-            result = self.supabase.table('users').select('*').eq('username', 'tatenda.mutombwa').execute()
-            
+            # Check if admin exists (use 'tatenda' as that's in the existing table)
+            result = self.supabase.table('users').select('*').eq('username', 'tatenda').execute()
+
             if not result.data:
-                # Create admin
+                # Create admin with existing table structure
                 self.supabase.table('users').insert({
-                    'username': 'tatenda.mutombwa',
+                    'username': 'tatenda',
                     'password_hash': self._hash_password('admin123'),
                     'email': 'tatenda.mutombwa@bardsantner.com',
+                    'full_name': 'Tatenda Mutombwa',
                     'role': 'admin'
                 }).execute()
-                
+
         except Exception:
             pass  # Silently fail - admin may already exist or table not ready
 
-    def register(self, username: str, password: str, email: str = '') -> Tuple[bool, str]:
+    def register(self, username: str, password: str, email: str = '', full_name: str = '') -> Tuple[bool, str]:
         """
         Register new user in Supabase
 
@@ -113,6 +173,7 @@ class SupabaseAuthentication:
             username: Username
             password: Password
             email: Email (required, must end with @bardsantner.com)
+            full_name: Full name (optional)
 
         Returns:
             Tuple of (success: bool, message: str)
@@ -135,12 +196,19 @@ class SupabaseAuthentication:
             if result.data:
                 return False, "Email already registered"
 
-            # Insert new user
+            # Generate full_name from email if not provided
+            if not full_name:
+                # Extract name from email: tatenda.mutombwa@bardsantner.com -> Tatenda Mutombwa
+                name_part = email.split('@')[0]
+                full_name = ' '.join(word.capitalize() for word in name_part.replace('.', ' ').replace('_', ' ').split())
+
+            # Insert new user (compatible with existing table structure)
             self.supabase.table('users').insert({
                 'username': username,
                 'password_hash': self._hash_password(password),
                 'email': email.lower(),
-                'role': 'user'
+                'full_name': full_name,
+                'role': 'poster'  # Default role for new users
             }).execute()
 
             return True, "Registration successful! Your account is now permanently stored in the cloud."
@@ -165,20 +233,23 @@ class SupabaseAuthentication:
         try:
             # Get user from Supabase
             result = self.supabase.table('users').select('*').eq('username', username).execute()
-            
+
             if not result.data:
                 return False
 
             user = result.data[0]
-            stored_hash = user['password_hash']
-            provided_hash = self._hash_password(password)
+            stored_hash = user.get('password_hash', '')
 
-            if stored_hash == provided_hash:
-                # Update last login
-                self.supabase.table('users').update({
-                    'last_login': datetime.now().isoformat()
-                }).eq('username', username).execute()
-                
+            # Use the new password verification that supports scrypt
+            if self._verify_password(password, stored_hash):
+                # Update last login (only if column exists)
+                try:
+                    self.supabase.table('users').update({
+                        'last_login': datetime.now().isoformat()
+                    }).eq('username', username).execute()
+                except:
+                    pass  # Column may not exist
+
                 return True
 
             return False
