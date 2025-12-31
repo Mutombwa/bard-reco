@@ -177,6 +177,32 @@ def main():
 def show_login_page():
     """Display login page"""
 
+    # Hide sidebar completely on login page
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] {
+            display: none;
+        }
+        [data-testid="stSidebarNav"] {
+            display: none;
+        }
+        section[data-testid="stSidebar"] {
+            display: none;
+        }
+        /* Hide the sidebar collapse button too */
+        button[kind="header"] {
+            display: none;
+        }
+        /* Alternative selectors for different Streamlit versions */
+        .css-1d391kg {
+            display: none;
+        }
+        .st-emotion-cache-1oe5cao {
+            display: none;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
     # Center the login form
     col1, col2, col3 = st.columns([1, 2, 1])
 
