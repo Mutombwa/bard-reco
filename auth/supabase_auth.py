@@ -82,43 +82,18 @@ class SupabaseAuthentication:
         return hashlib.sha256(password.encode()).hexdigest()
 
     def _verify_password(self, password: str, stored_hash: str) -> bool:
-        """Verify password against stored hash (supports SHA-256 and scrypt)"""
+        """Verify password against stored SHA-256 hash"""
         try:
-            # Method 1: SHA-256 hash (64 char hex string)
+            # SHA-256 hash comparison (64 char hex string)
             sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+
+            # Direct comparison
             if stored_hash == sha256_hash:
                 return True
 
-            # Method 2: Case-insensitive SHA-256 comparison
-            if len(stored_hash) == 64:
-                if stored_hash.lower() == sha256_hash.lower():
-                    return True
-
-            # Method 3: Handle Werkzeug scrypt format (scrypt:n:r:p$salt$hash)
-            if stored_hash.startswith('scrypt:'):
-                try:
-                    import base64
-                    parts = stored_hash.split('$')
-                    if len(parts) == 3:
-                        params = parts[0].split(':')
-                        n = int(params[1])
-                        r = int(params[2])
-                        p = int(params[3])
-                        salt = parts[1]
-                        stored_key_b64 = parts[2]
-
-                        # Try with salt as UTF-8 string
-                        computed_key = hashlib.scrypt(
-                            password.encode('utf-8'),
-                            salt=salt.encode('utf-8'),
-                            n=n, r=r, p=p,
-                            dklen=64
-                        )
-                        computed_b64 = base64.b64encode(computed_key).decode('ascii')
-                        if computed_b64 == stored_key_b64:
-                            return True
-                except Exception:
-                    pass
+            # Case-insensitive comparison
+            if stored_hash.lower() == sha256_hash.lower():
+                return True
 
             return False
 
