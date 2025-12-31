@@ -27,12 +27,26 @@ class SupabaseDB:
     def _initialize_client(self):
         """Initialize Supabase client from secrets or environment"""
         try:
-            # Try to get credentials from Streamlit secrets
-            supabase_url = st.secrets.get("SUPABASE_URL", "")
-            supabase_key = st.secrets.get("SUPABASE_KEY", "")
+            supabase_url = ""
+            supabase_key = ""
 
+            # Try format 1: st.secrets["SUPABASE_URL"]
+            try:
+                supabase_url = st.secrets.get("SUPABASE_URL", "")
+                supabase_key = st.secrets.get("SUPABASE_KEY", "")
+            except:
+                pass
+
+            # Try format 2: st.secrets["supabase"]["url"]
             if not supabase_url or not supabase_key:
-                # Try environment variables
+                try:
+                    supabase_url = st.secrets["supabase"]["url"]
+                    supabase_key = st.secrets["supabase"]["key"]
+                except:
+                    pass
+
+            # Try environment variables as fallback
+            if not supabase_url or not supabase_key:
                 import os
                 supabase_url = os.environ.get("SUPABASE_URL", "")
                 supabase_key = os.environ.get("SUPABASE_KEY", "")
