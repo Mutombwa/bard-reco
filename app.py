@@ -315,7 +315,7 @@ def show_main_app():
     show_workflows_page()
 
 def show_workflows_page():
-    """Specialized workflows page - Display all workflows"""
+    """Specialized workflows page - Display all workflows with Dashboard"""
 
     from components.fnb_workflow import FNBWorkflow
     from components.absa_workflow import ABSAWorkflow
@@ -323,43 +323,47 @@ def show_workflows_page():
     from components.bidvest_workflow import BidvestWorkflow
     from components.corporate_workflow import CorporateWorkflow
     from components.fix_ledger_workflow import FixLedgerWorkflow
+    from components.dashboard import Dashboard
 
     st.markdown("""
     <div class="gradient-header">
-        <h1>🔄 All Workflows</h1>
-        <p>View and manage all available reconciliation workflows</p>
+        <h1>🔄 BARD-RECO</h1>
+        <p>View dashboard analytics and manage all reconciliation workflows</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Create tabs for each workflow
-    workflow_tabs = st.tabs(["🏦 FNB Workflow", "🏦 ABSA Workflow", "💳 Kazang Workflow", "💼 Bidvest Workflow", "🏢 Corporate Workflow", "🔧 Fix Ledger"])
+    # Create tabs with Dashboard first
+    workflow_tabs = st.tabs(["🏠 Dashboard", "🏦 FNB Workflow", "🏦 ABSA Workflow", "💳 Kazang Workflow", "💼 Bidvest Workflow", "🏢 Corporate Workflow", "🔧 Fix Ledger"])
 
     with workflow_tabs[0]:
+        Dashboard().render()
+
+    with workflow_tabs[1]:
         st.markdown("### 🏦 FNB Bank Reconciliation")
         st.markdown("---")
         FNBWorkflow().render()
 
-    with workflow_tabs[1]:
+    with workflow_tabs[2]:
         st.markdown("### 🏦 ABSA Bank Reconciliation")
         st.markdown("---")
         ABSAWorkflow().render()
 
-    with workflow_tabs[2]:
+    with workflow_tabs[3]:
         st.markdown("### 💳 Kazang Reconciliation")
         st.markdown("---")
         KazangWorkflow().render()
 
-    with workflow_tabs[3]:
+    with workflow_tabs[4]:
         st.markdown("### 💼 Bidvest Settlement Reconciliation")
         st.markdown("---")
         BidvestWorkflow().render()
 
-    with workflow_tabs[4]:
+    with workflow_tabs[5]:
         st.markdown("### 🏢 Corporate Settlement Reconciliation")
         st.markdown("---")
         CorporateWorkflow().render()
 
-    with workflow_tabs[5]:
+    with workflow_tabs[6]:
         st.markdown("### 🔧 Fix Ledger - Enrich with TX Report")
         st.markdown("---")
         FixLedgerWorkflow().render()
