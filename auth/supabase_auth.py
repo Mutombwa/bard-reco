@@ -78,61 +78,47 @@ class SupabaseAuthentication:
             # Don't show error here - handled by hybrid_auth
 
     def _hash_password(self, password: str) -> str:
-        """Hash password using scrypt (compatible with existing database)"""
-        import secrets
-        import base64
-
-        # Generate salt
-        salt = secrets.token_hex(16)
-
-        # Use scrypt with same parameters as existing hashes (32768:8:1)
-        key = hashlib.scrypt(
-            password.encode(),
-            salt=salt.encode(),
-            n=32768,
-            r=8,
-            p=1,
-            dklen=64
-        )
-
-        # Format: scrypt:n:r:p$salt$hash
-        hash_b64 = base64.b64encode(key).decode('ascii')
-        return f"scrypt:32768:8:1${salt}${hash_b64}"
+        """Hash password using SHA-256 (simple and reliable)"""
+        return hashlib.sha256(password.encode()).hexdigest()
 
     def _verify_password(self, password: str, stored_hash: str) -> bool:
-        """Verify password against stored scrypt hash"""
-        import base64
-
+        """Verify password against stored hash (supports SHA-256 and scrypt)"""
         try:
-            # Handle SHA-256 hashes (old format - 64 char hex)
-            if len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash.lower()):
-                return hashlib.sha256(password.encode()).hexdigest() == stored_hash
+            # Method 1: SHA-256 hash (64 char hex string)
+            sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+            if stored_hash == sha256_hash:
+                return True
 
-            # Parse scrypt hash format: scrypt:n:r:p$salt$hash
+            # Method 2: Case-insensitive SHA-256 comparison
+            if len(stored_hash) == 64:
+                if stored_hash.lower() == sha256_hash.lower():
+                    return True
+
+            # Method 3: Handle Werkzeug scrypt format (scrypt:n:r:p$salt$hash)
             if stored_hash.startswith('scrypt:'):
-                parts = stored_hash.split('$')
-                if len(parts) != 3:
-                    return False
+                try:
+                    import base64
+                    parts = stored_hash.split('$')
+                    if len(parts) == 3:
+                        params = parts[0].split(':')
+                        n = int(params[1])
+                        r = int(params[2])
+                        p = int(params[3])
+                        salt = parts[1]
+                        stored_key_b64 = parts[2]
 
-                params = parts[0].split(':')  # scrypt:32768:8:1
-                n = int(params[1])
-                r = int(params[2])
-                p = int(params[3])
-                salt = parts[1]
-                stored_key_b64 = parts[2]
-
-                # Compute hash with same parameters
-                computed_key = hashlib.scrypt(
-                    password.encode(),
-                    salt=salt.encode(),
-                    n=n,
-                    r=r,
-                    p=p,
-                    dklen=64
-                )
-
-                computed_b64 = base64.b64encode(computed_key).decode('ascii')
-                return computed_b64 == stored_key_b64
+                        # Try with salt as UTF-8 string
+                        computed_key = hashlib.scrypt(
+                            password.encode('utf-8'),
+                            salt=salt.encode('utf-8'),
+                            n=n, r=r, p=p,
+                            dklen=64
+                        )
+                        computed_b64 = base64.b64encode(computed_key).decode('ascii')
+                        if computed_b64 == stored_key_b64:
+                            return True
+                except Exception:
+                    pass
 
             return False
 
