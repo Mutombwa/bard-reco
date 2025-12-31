@@ -359,11 +359,12 @@ class KazangWorkflow:
                         return ''
                     name = name.strip()
                     # Remove trailing phone number after space: "Jenet 6452843846" → "Jenet"
-                    name = re.sub(r'\s+\d{10,}$', '', name)
+                    # Changed from \d{10,} to \d{9,} to catch 9-digit numbers like 645297394
+                    name = re.sub(r'\s+\d{9,}$', '', name)
                     # Remove phone number after slash: "gracious/6453092146" → "gracious"
-                    name = re.sub(r'/\d{10,}$', '', name)
-                    # Remove attached phone number (name followed directly by 10+ digits): "remember6453463069" → "remember"
-                    name = re.sub(r'^([a-zA-Z][a-zA-Z\s]*?)\d{10,}$', r'\1', name)
+                    name = re.sub(r'/\d{9,}$', '', name)
+                    # Remove attached phone number (name followed directly by 9+ digits): "remember6453463069" → "remember"
+                    name = re.sub(r'^([a-zA-Z][a-zA-Z\s]*?)\d{9,}$', r'\1', name)
                     return name.strip()
 
                 # Pattern 1: Find ALL parentheses and use the one with the name (not #Ref)

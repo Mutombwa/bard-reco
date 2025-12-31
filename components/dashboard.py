@@ -220,36 +220,30 @@ class Dashboard:
             st.session_state.selected_category = 'all'
 
         # Create navigation buttons in columns
+        # Note: Removed st.rerun() calls - Streamlit automatically reruns when session state changes
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            if st.button("✅ Matched", use_container_width=True, type="primary" if st.session_state.selected_category == 'matched' else "secondary"):
+            if st.button("✅ Matched", use_container_width=True, type="primary" if st.session_state.selected_category == 'matched' else "secondary", key="dash_btn_matched"):
                 st.session_state.selected_category = 'matched'
-                st.rerun()
-            if st.button("🔄 Split Transactions", use_container_width=True, type="primary" if st.session_state.selected_category == 'split' else "secondary"):
+            if st.button("🔄 Split Transactions", use_container_width=True, type="primary" if st.session_state.selected_category == 'split' else "secondary", key="dash_btn_split"):
                 st.session_state.selected_category = 'split'
-                st.rerun()
 
         with col2:
-            if st.button("📊 All Transactions", use_container_width=True, type="primary" if st.session_state.selected_category == 'all' else "secondary"):
+            if st.button("📊 All Transactions", use_container_width=True, type="primary" if st.session_state.selected_category == 'all' else "secondary", key="dash_btn_all"):
                 st.session_state.selected_category = 'all'
-                st.rerun()
-            if st.button("🎯 Balanced By Fuzzy", use_container_width=True, type="primary" if st.session_state.selected_category == 'fuzzy' else "secondary"):
+            if st.button("🎯 Balanced By Fuzzy", use_container_width=True, type="primary" if st.session_state.selected_category == 'fuzzy' else "secondary", key="dash_btn_fuzzy"):
                 st.session_state.selected_category = 'fuzzy'
-                st.rerun()
 
         with col3:
-            if st.button("❌ Unmatched Ledger", use_container_width=True, type="primary" if st.session_state.selected_category == 'unmatched_ledger' else "secondary"):
+            if st.button("❌ Unmatched Ledger", use_container_width=True, type="primary" if st.session_state.selected_category == 'unmatched_ledger' else "secondary", key="dash_btn_unmatched_l"):
                 st.session_state.selected_category = 'unmatched_ledger'
-                st.rerun()
-            if st.button("💱 Foreign Credits", use_container_width=True, type="primary" if st.session_state.selected_category == 'foreign' else "secondary"):
+            if st.button("💱 Foreign Credits", use_container_width=True, type="primary" if st.session_state.selected_category == 'foreign' else "secondary", key="dash_btn_foreign"):
                 st.session_state.selected_category = 'foreign'
-                st.rerun()
 
         with col4:
-            if st.button("⚠️ Unmatched Statement", use_container_width=True, type="primary" if st.session_state.selected_category == 'unmatched_statement' else "secondary"):
+            if st.button("⚠️ Unmatched Statement", use_container_width=True, type="primary" if st.session_state.selected_category == 'unmatched_statement' else "secondary", key="dash_btn_unmatched_s"):
                 st.session_state.selected_category = 'unmatched_statement'
-                st.rerun()
 
         # Display selected category transactions
         st.markdown("---")
