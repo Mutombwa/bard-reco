@@ -2192,9 +2192,17 @@ class FNBWorkflow:
         try:
             import sys
             import os
-            import pickle
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
-            from database import get_db  # type: ignore
+
+            # Import both database services
+            from database import get_db as get_local_db  # type: ignore
+            from supabase_db import get_db as get_supabase_db, save_reconciliation_results  # type: ignore
+
+            # Check Supabase status
+            supabase_db = get_supabase_db()
+            storage_mode = "Supabase (Cloud)" if supabase_db.is_enabled() else "Local Storage"
+
+            st.info(f"Storage Mode: **{storage_mode}**")
 
             # Show input dialog for result name
             result_name = st.text_input(
@@ -2204,51 +2212,77 @@ class FNBWorkflow:
             )
 
             if st.button("✅ Confirm Save", key='fnb_confirm_save'):
-                # Get database instance
-                db = get_db()
+                # Prepare DataFrames from results
+                matched_df = results.get('perfect_matches')
+                if matched_df is None or len(matched_df) == 0:
+                    matched_df = results.get('fuzzy_matches')
 
-                # Prepare metadata with timestamp
-                metadata = {
-                    'ledger_columns': list(st.session_state.fnb_ledger.columns),
-                    'statement_columns': list(st.session_state.fnb_statement.columns),
-                    'match_settings': st.session_state.fnb_match_settings,
-                    'saved_timestamp': datetime.now().isoformat()
-                }
+                unmatched_ledger_df = results.get('unmatched_ledger')
+                unmatched_statement_df = results.get('unmatched_statement')
+                foreign_credits_df = results.get('foreign_credits')
 
-                # Save to database
-                result_id = db.save_result(
-                    name=result_name,
+                # Save to Supabase (or local fallback)
+                success, session_id = save_reconciliation_results(
                     workflow_type='FNB',
-                    results=results,
-                    metadata=metadata
+                    session_name=result_name,
+                    matched_df=matched_df,
+                    unmatched_ledger_df=unmatched_ledger_df,
+                    unmatched_statement_df=unmatched_statement_df,
+                    foreign_credits_df=foreign_credits_df,
+                    user_id=st.session_state.get('username')
                 )
+
+                # Also save to local SQLite for backwards compatibility
+                try:
+                    local_db = get_local_db()
+                    metadata = {
+                        'ledger_columns': list(st.session_state.fnb_ledger.columns),
+                        'statement_columns': list(st.session_state.fnb_statement.columns),
+                        'match_settings': st.session_state.fnb_match_settings,
+                        'saved_timestamp': datetime.now().isoformat(),
+                        'supabase_session_id': session_id
+                    }
+                    result_id = local_db.save_result(
+                        name=result_name,
+                        workflow_type='FNB',
+                        results=results,
+                        metadata=metadata
+                    )
+                except Exception as local_err:
+                    result_id = session_id[:8] if session_id else "local"
 
                 # PERSIST TO SESSION STATE (so data survives refresh)
                 st.session_state.fnb_results = results
                 st.session_state.fnb_results_saved = True
                 st.session_state.fnb_last_save_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                
+
                 # Add to reconciliation history
                 if 'reconciliation_history' not in st.session_state:
                     st.session_state.reconciliation_history = []
-                
+
                 st.session_state.reconciliation_history.append({
                     'date': datetime.now(),
                     'workflow': 'FNB',
                     'matched': results.get('total_matched', 0),
                     'unmatched': results.get('unmatched_ledger_count', 0) + results.get('unmatched_statement_count', 0),
-                    'result_id': result_id
+                    'result_id': result_id,
+                    'session_id': session_id
                 })
 
-                st.success(f"✅ Results saved successfully! (ID: {result_id})")
-                st.info("💡 Data persisted to session. View from Dashboard or Data Management page")
-                
+                if success:
+                    st.success(f"✅ Results saved successfully to {storage_mode}!")
+                    st.info(f"Session ID: `{session_id[:8]}...`")
+                else:
+                    st.warning(f"⚠️ Results saved locally (ID: {result_id})")
+
                 # Log audit trail
                 self.log_audit_trail("SAVE_RESULTS", {
                     'result_id': result_id,
+                    'session_id': session_id,
                     'name': result_name,
                     'matched_count': results.get('total_matched', 0),
-                    'unmatched_count': results.get('unmatched_ledger_count', 0) + results.get('unmatched_statement_count', 0)
+                    'unmatched_count': results.get('unmatched_ledger_count', 0) + results.get('unmatched_statement_count', 0),
+                    'storage_mode': storage_mode
                 })
 
         except Exception as e:
