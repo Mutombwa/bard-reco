@@ -345,6 +345,7 @@ class KazangWorkflow:
                 - "In: CSH815211956: Lillian6456036044" → "Lillian"
                 - "In: INN217901612: Mbeke 6457254616" → "Mbeke"
                 - "Reversal: ECO117918890: Eco 6456318627" → "Eco"
+                - "In: CSH497828830: 6457579902 Nomazulu" → "Nomazulu" (name after phone number)
                 """
                 if not isinstance(comment, str):
                     return ''
@@ -384,6 +385,13 @@ class KazangWorkflow:
                 match4 = re.search(pattern4, comment, re.IGNORECASE)
                 if match4:
                     return match4.group(2).strip()
+
+                # Pattern 5: Name AFTER phone number - "CSH497828830: 6457579902 Nomazulu"
+                # Matches: reference number, then phone number (10 digits), then name
+                pattern5 = r'#?(RJ|CSH|ZVC|ECO|INN|TX)\d+[:\.\s]+\d{10}\s+([A-Za-z]+)'
+                match5 = re.search(pattern5, comment, re.IGNORECASE)
+                if match5:
+                    return match5.group(2).strip()
 
                 # Fallback: Return empty if no pattern matches
                 return ''
