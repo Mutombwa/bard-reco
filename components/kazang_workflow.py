@@ -9,6 +9,8 @@ Key Differences from FNB:
 - Payment Ref extracted from Comment column only
 - Format: "Ref #RJ58822828410. - Gugu 6408370691" → Payment Ref = "Gugu"
 - Format: "Ref #RJ58953541109. - Lucy6410281493" → Payment Ref = "Lucy"
+- Format: "In: CSH666722052: Thandi 6456043502" → Payment Ref = "Thandi"
+- Format: "Reversal: ECO117918890: Eco 6456318627" → Payment Ref = "Eco"
 """
 
 import streamlit as st
@@ -25,13 +27,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from data_cleaner import clean_amount_column  # type: ignore
 from column_selector import ColumnSelector  # type: ignore
 from file_loader import load_uploaded_file, get_dataframe_info  # type: ignore
-
-# Import Supabase database service
-try:
-    from supabase_db import get_db as get_supabase_db, save_reconciliation_results
-except ImportError:
-    get_supabase_db = None
-    save_reconciliation_results = None
 
 
 class KazangWorkflow:
@@ -342,63 +337,53 @@ class KazangWorkflow:
                 Extract Payment Ref from Kazang comment format
 
                 Examples:
-                - "Ref CSH891089488 - (Jenet 6452843846)" → "Jenet"
-                - "Ref CSH759506112 - (gracious/6453092146)" → "gracious"
-                - "Ref CSH654176053 - (remember6453463069)" → "remember"
-                - "Reversal: (#Ref CSH613695391)  - (Doubt Sibanda)" → "Doubt Sibanda"
                 - "Ref #RJ58822828410. - Gugu 6408370691" → "Gugu"
+                - "Ref #RJ58953541109. - Lucy6410281493" → "Lucy"
+                - "Ref CSH764074250 - (Phuthani mabhena)" → "Phuthani mabhena"
+                - "Ref CSH293299862 - (Mlamuli)" → "Mlamuli"
+                - "In: CSH666722052: Thandi 6456043502" → "Thandi"
+                - "In: CSH815211956: Lillian6456036044" → "Lillian"
+                - "In: INN217901612: Mbeke 6457254616" → "Mbeke"
+                - "Reversal: ECO117918890: Eco 6456318627" → "Eco"
                 """
                 if not isinstance(comment, str):
                     return ''
 
                 comment = comment.strip()
 
-                def clean_name(name):
-                    """Remove phone numbers from extracted name"""
-                    if not name:
-                        return ''
-                    name = name.strip()
-                    # Remove trailing phone number after space: "Jenet 6452843846" → "Jenet"
-                    # Changed from \d{10,} to \d{9,} to catch 9-digit numbers like 645297394
-                    name = re.sub(r'\s+\d{9,}$', '', name)
-                    # Remove phone number after slash: "gracious/6453092146" → "gracious"
-                    name = re.sub(r'/\d{9,}$', '', name)
-                    # Remove attached phone number (name followed directly by 9+ digits): "remember6453463069" → "remember"
-                    name = re.sub(r'^([a-zA-Z][a-zA-Z\s]*?)\d{9,}$', r'\1', name)
-                    return name.strip()
-
-                # Pattern 1: Find ALL parentheses and use the one with the name (not #Ref)
-                # This handles: "Reversal: (#Ref CSH613695391)  - (Doubt Sibanda)"
-                all_parens = re.findall(r'\(\s*([^)]+)\s*\)', comment)
-                for paren_content in all_parens:
-                    paren_content = paren_content.strip()
-                    # Skip if it looks like a reference
-                    if re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
-                        continue
-                    # Found a valid name in parentheses
-                    cleaned = clean_name(paren_content)
-                    if cleaned:
-                        return cleaned
+                # Pattern 1: Parentheses format - "Ref CSH764074250 - (Phuthani mabhena)"
+                # But not if it's just the reference itself like "Reversal: (#Ref CSH767209773)"
+                paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
+                if paren_match:
+                    paren_content = paren_match.group(1).strip()
+                    # Only use if it doesn't look like a reference
+                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
+                        return paren_content
 
                 # Pattern 2: Look for "- " followed by name (with dot before)
                 # Match: ". - Name" where Name is letters (possibly with numbers attached)
-                pattern2 = r'\.\s*-\s*([A-Za-z][A-Za-z\s]*)'
+                pattern2 = r'\.\s*-\s*([A-Za-z]+)'
                 match2 = re.search(pattern2, comment)
                 if match2:
-                    return clean_name(match2.group(1))
+                    return match2.group(1).strip()
 
                 # Pattern 3: Alternative format without dot
-                # Match: "- Name" (space after dash required)
-                pattern3 = r'-\s+([A-Za-z][A-Za-z\s]*)'
+                # Match: "- Name"
+                pattern3 = r'-\s+([A-Za-z]+)'
                 match3 = re.search(pattern3, comment)
                 if match3:
-                    return clean_name(match3.group(1))
+                    return match3.group(1).strip()
 
                 # Pattern 4: If there's text after RJ/CSH/ZVC/ECO/INN number, try to extract name
-                pattern4 = r'#?(RJ|CSH|ZVC|ECO|INN|TX)\d+\.?\s*-?\s*([A-Za-z][A-Za-z\s]*)'
+                # Supports formats like:
+                # - "CSH666722052: Thandi 6456043502" → "Thandi"
+                # - "In: CSH666722052: Thandi 6456043502" → "Thandi"
+                # - "Reversal: ECO117918890: Eco 6456318627" → "Eco"
+                # - "INN217901612: Mbeke 6457254616" → "Mbeke"
+                pattern4 = r'#?(RJ|CSH|ZVC|ECO|INN|TX)\d+[:\.\s]*-?\s*([A-Za-z]+)'
                 match4 = re.search(pattern4, comment, re.IGNORECASE)
                 if match4:
-                    return clean_name(match4.group(2))
+                    return match4.group(2).strip()
 
                 # Fallback: Return empty if no pattern matches
                 return ''
@@ -451,9 +436,6 @@ class KazangWorkflow:
                         'RJ-Number': rj_numbers[i]
                     })
                 st.dataframe(pd.DataFrame(sample_data), use_container_width=True)
-
-            # Rerun to update UI with new columns
-            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Error extracting Payment Ref: {str(e)}")
@@ -514,9 +496,6 @@ class KazangWorkflow:
                         'RJ-Number': rj_numbers[i]
                     })
                 st.dataframe(pd.DataFrame(sample_data), use_container_width=True)
-
-            # Rerun to update UI with new columns
-            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Error extracting RJ numbers: {str(e)}")
@@ -1203,124 +1182,48 @@ class KazangWorkflow:
             st.error(f"❌ Failed to create report: {str(e)}")
 
     def save_results_to_db(self, results):
-        """Save reconciliation results to Supabase or local storage"""
-        st.markdown("### 💾 Save Results to Database")
-
-        # Check database status
-        db = get_supabase_db() if get_supabase_db else None
-        db_status = "Supabase (Cloud)" if db and db.is_enabled() else "Local Storage"
-        st.info(f"Storage: **{db_status}**")
-
-        # Get counts
-        matched_count = results.get('total_matched', 0)
-        unmatched_ledger_count = len(results.get('unmatched_ledger', []))
-        unmatched_statement_count = len(results.get('unmatched_statement', []))
-
-        # Session name input
-        default_name = f"Kazang Reconciliation - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        session_name = st.text_input(
-            "Session Name",
-            value=default_name,
-            key="kazang_save_session_name"
-        )
-
-        # Summary metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Matched", matched_count)
-        with col2:
-            st.metric("Unmatched (Ledger)", unmatched_ledger_count)
-        with col3:
-            st.metric("Unmatched (Statement)", unmatched_statement_count)
-
-        # Save button
-        if st.button("✅ Confirm Save", type="primary", use_container_width=True, key="kazang_confirm_save_btn"):
-            try:
-                if save_reconciliation_results is None:
-                    st.warning("Supabase not configured. Saving to local storage.")
-                    success = self._save_to_local_storage(session_name, results)
-                else:
-                    # Prepare dataframes
-                    matched_df = results.get('matched', pd.DataFrame())
-                    unmatched_ledger_df = results.get('unmatched_ledger', pd.DataFrame())
-                    unmatched_statement_df = results.get('unmatched_statement', pd.DataFrame())
-
-                    # Calculate match rate
-                    total_items = len(matched_df) + len(unmatched_ledger_df) + len(unmatched_statement_df)
-                    match_rate = (len(matched_df) / total_items * 100) if total_items > 0 else 0
-
-                    # Save using the unified save function
-                    success, session_id = save_reconciliation_results(
-                        workflow_type='Kazang',
-                        session_name=session_name,
-                        matched_df=matched_df,
-                        unmatched_ledger_df=unmatched_ledger_df,
-                        unmatched_statement_df=unmatched_statement_df,
-                        match_rate=match_rate,
-                        metadata={
-                            'perfect_matches': results.get('perfect_match_count', 0),
-                            'fuzzy_matches': results.get('fuzzy_match_count', 0),
-                            'foreign_credits': results.get('foreign_credits_count', 0),
-                            'split_transactions': len(results.get('split_matches', []))
-                        }
-                    )
-
-                    if success:
-                        st.session_state.kazang_last_saved_session = session_id
-                        self.log_audit_trail("SAVE_RESULTS", {
-                            'session_id': session_id,
-                            'name': session_name
-                        })
-
-                if success:
-                    st.success("✅ Results saved successfully!")
-                    st.balloons()
-                else:
-                    st.error("❌ Failed to save results. Please try again.")
-
-            except Exception as e:
-                st.error(f"❌ Failed to save results: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
-
-    def _save_to_local_storage(self, session_name: str, results: dict) -> bool:
-        """Fallback: Save results to local session state storage"""
+        """Save reconciliation results to database"""
         try:
-            import uuid
+            import sys
+            import os
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
+            from database import get_db
 
-            if 'local_sessions' not in st.session_state:
-                st.session_state.local_sessions = {}
+            result_name = st.text_input(
+                "Enter a name for these results:",
+                value=f"Kazang_Reconciliation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                key='kazang_save_result_name'
+            )
 
-            session_id = str(uuid.uuid4())
+            if st.button("✅ Confirm Save", key='kazang_confirm_save'):
+                db = get_db()
 
-            matched_df = results.get('matched', pd.DataFrame())
-            unmatched_ledger_df = results.get('unmatched_ledger', pd.DataFrame())
-            unmatched_statement_df = results.get('unmatched_statement', pd.DataFrame())
-
-            total_items = len(matched_df) + len(unmatched_ledger_df) + len(unmatched_statement_df)
-            match_rate = (len(matched_df) / total_items * 100) if total_items > 0 else 0
-
-            st.session_state.local_sessions[session_id] = {
-                'id': session_id,
-                'session_name': session_name,
-                'workflow_type': 'Kazang',
-                'status': 'completed',
-                'created_at': datetime.now().isoformat(),
-                'total_matched': len(matched_df),
-                'total_unmatched_ledger': len(unmatched_ledger_df),
-                'total_unmatched_statement': len(unmatched_statement_df),
-                'match_rate': match_rate,
-                'metadata': {
-                    'perfect_matches': results.get('perfect_match_count', 0),
-                    'fuzzy_matches': results.get('fuzzy_match_count', 0)
+                metadata = {
+                    'ledger_columns': list(st.session_state.kazang_ledger.columns),
+                    'statement_columns': list(st.session_state.kazang_statement.columns),
+                    'match_settings': st.session_state.kazang_match_settings,
+                    'saved_timestamp': datetime.now().isoformat()
                 }
-            }
 
-            return True
+                result_id = db.save_result(
+                    name=result_name,
+                    workflow_type='Kazang',
+                    results=results,
+                    metadata=metadata
+                )
+
+                st.session_state.kazang_results = results
+                st.session_state.kazang_results_saved = True
+
+                st.success(f"✅ Results saved successfully! (ID: {result_id})")
+                
+                self.log_audit_trail("SAVE_RESULTS", {
+                    'result_id': result_id,
+                    'name': result_name
+                })
 
         except Exception as e:
-            st.error(f"Error saving to local storage: {str(e)}")
-            return False
+            st.error(f"❌ Failed to save results: {str(e)}")
 
     def log_audit_trail(self, action, details):
         """Log actions to audit trail"""
