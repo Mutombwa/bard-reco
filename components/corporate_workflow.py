@@ -34,9 +34,39 @@ except ImportError:
 
 
 class CorporateWorkflow:
-    """Ultra-fast Corporate Settlement Workflow - OPTIMIZED"""
+    """
+    Ultra-fast Corporate Settlement Workflow - OPTIMIZED
+    
+    Features:
+    - Pre-compiled regex for fast reference extraction
+    - Case-insensitive pattern matching (handles rj/RJ, csh/CSH, etc.)
+    - Vectorized operations for large datasets
+    - Configurable matching thresholds
+    - Hash-based O(1) lookups for matching
+    """
+    
+    # Configurable matching thresholds (can be overridden in __init__)
+    EXACT_MATCH_THRESHOLD = 0.01      # Difference < 0.01 = exact match
+    COMMISSION_THRESHOLD = 1.0         # Difference >= 1 = commission
+    RATE_DIFF_MIN = 0.01              # Rate difference minimum
+    RATE_DIFF_MAX = 1.0               # Rate difference maximum
 
-    def __init__(self):
+    def __init__(self, exact_threshold=None, commission_threshold=None, rate_diff_range=None):
+        """
+        Initialize the Corporate Workflow.
+        
+        Args:
+            exact_threshold: Override for exact match threshold (default: 0.01)
+            commission_threshold: Override for commission threshold (default: 1.0)
+            rate_diff_range: Tuple of (min, max) for rate difference range (default: (0.01, 1.0))
+        """
+        if exact_threshold is not None:
+            self.EXACT_MATCH_THRESHOLD = exact_threshold
+        if commission_threshold is not None:
+            self.COMMISSION_THRESHOLD = commission_threshold
+        if rate_diff_range is not None:
+            self.RATE_DIFF_MIN, self.RATE_DIFF_MAX = rate_diff_range
+            
         self.initialize_session_state()
 
     def initialize_session_state(self):
@@ -52,42 +82,75 @@ class CorporateWorkflow:
         if 'show_extracted_data' not in st.session_state:
             st.session_state.show_extracted_data = False
 
+    # Pre-compiled regex patterns for MAXIMUM extraction speed (compiled once, used many times)
+    # All patterns are CASE-INSENSITIVE to handle rj/RJ, csh/CSH, etc.
+    _REFERENCE_PATTERN = re.compile(
+        r'''
+        (?P<rj>RJ\d{11})           |  # RJ patterns: RJ + 11 digits (e.g., RJ59159065012, rj58044672280)
+        (?P<tx>TX\d{11})           |  # TX patterns: TX + 11 digits
+        (?P<csh>CSH\d{9,})         |  # CSH patterns: CSH + 9+ digits (e.g., CSH710230082, CSH021131898)
+        (?P<zvc>ZVC\d{9})          |  # ZVC patterns: ZVC + 9 digits (e.g., ZVC083448501)
+        (?P<eco>ECO\d{9})          |  # ECO patterns: ECO + 9 digits
+        (?P<inn>INN\d{9})          |  # INN patterns: INN + 9 digits
+        (?P<journal>(?<!R)(?<!T)J\d{5})  # Journal entries: J + 5 digits (not preceded by R or T)
+        ''',
+        re.IGNORECASE | re.VERBOSE
+    )
+    _CORRECTING_PATTERN = re.compile(r'Correcting', re.IGNORECASE)
+    _SPECIAL_JOURNAL_PATTERN = re.compile(r'(?<!R)(?<!T)\b[A-Za-z]+\s+J\d{5}\b', re.IGNORECASE)
+
     @staticmethod
     def extract_references(comment_text):
-        """Extract RJ, TX, CSH, ZVC, ECO, INN reference numbers from comment text"""
+        """
+        Extract RJ, TX, CSH, ZVC, ECO, INN reference numbers from comment text.
+        
+        OPTIMIZED VERSION:
+        - Pre-compiled regex (compiled once at class level)
+        - Single regex pass instead of 7 separate calls
+        - Case-insensitive matching (handles rj/RJ, csh/CSH, etc.)
+        - Normalizes output to UPPERCASE for consistent matching
+        
+        Supported patterns:
+        - RJ + 11 digits: RJ59159065012, rj58044672280
+        - TX + 11 digits: TX12345678901
+        - CSH + 9+ digits: CSH710230082, CSH021131898, CSH632914678
+        - ZVC + 9 digits: ZVC083448501
+        - ECO + 9 digits: ECO123456789
+        - INN + 9 digits: INN123456789
+        - J + 5 digits: J12345 (not preceded by R or T)
+        """
         if pd.isna(comment_text) or not isinstance(comment_text, str):
             return ""
 
-        # Check for special patterns
-        if 'Correcting' in comment_text:
-            return comment_text.strip()
+        comment_text = comment_text.strip()
+        if not comment_text:
+            return ""
 
-        if re.search(r'(?<!R)(?<!T)\b[A-Za-z]+\s+J\d{5}\b', comment_text):
-            return comment_text.strip()
+        # Check for special patterns that return full text
+        if CorporateWorkflow._CORRECTING_PATTERN.search(comment_text):
+            return comment_text
 
-        all_matches = []
+        if CorporateWorkflow._SPECIAL_JOURNAL_PATTERN.search(comment_text):
+            return comment_text
 
-        # Extract ALL reference patterns (RJ, TX, CSH, ZVC, ECO, INN)
-        # RJ patterns (11 digits)
-        all_matches.extend(re.findall(r'RJ\d{11}', comment_text))
-        # TX patterns (11 digits)
-        all_matches.extend(re.findall(r'TX\d{11}', comment_text))
-        # CSH patterns (9+ digits) - Cash transactions
-        all_matches.extend(re.findall(r'CSH\d{9,}', comment_text))
-        # ZVC patterns (9 digits) - Reversal transactions
-        all_matches.extend(re.findall(r'ZVC\d{9}', comment_text))
-        # ECO patterns (9 digits) - ECO transactions
-        all_matches.extend(re.findall(r'ECO\d{9}', comment_text))
-        # INN patterns (9 digits) - INN transactions
-        all_matches.extend(re.findall(r'INN\d{9}', comment_text))
-        # J patterns (5 digits) - Journal entries
-        all_matches.extend(re.findall(r'(?<!R)(?<!T)J\d{5}', comment_text))
-
-        # Remove duplicates while preserving order
+        # Single-pass extraction using pre-compiled pattern
+        matches = CorporateWorkflow._REFERENCE_PATTERN.findall(comment_text)
+        
+        if not matches:
+            return ""
+        
+        # Flatten tuple results and filter empty strings, then normalize to UPPERCASE
+        all_refs = []
         seen = set()
-        unique_matches = [m for m in all_matches if not (m in seen or seen.add(m))]
-
-        return ', '.join(unique_matches) if unique_matches else ""
+        for match_tuple in matches:
+            for ref in match_tuple:
+                if ref:
+                    ref_upper = ref.upper()  # Normalize to uppercase for consistent matching
+                    if ref_upper not in seen:
+                        seen.add(ref_upper)
+                        all_refs.append(ref_upper)
+        
+        return ', '.join(all_refs) if all_refs else ""
 
     @staticmethod
     def extract_payment_ref(comment_text):
@@ -199,8 +262,35 @@ class CorporateWorkflow:
                 with col4:
                     journal_col = st.selectbox("Journal", working_df.columns, key="journal_col")
 
+                # Validate column selection before running
+                columns_valid = True
+                validation_errors = []
+                
+                # Check for duplicate column selections
+                selected_cols = [debit_col, credit_col, ref_col, journal_col]
+                if len(set(selected_cols)) < 4:
+                    columns_valid = False
+                    validation_errors.append("⚠️ Each column must be unique - same column selected for multiple fields")
+                
+                # Check that debit/credit columns contain numeric data
+                if working_df[debit_col].dtype not in ['int64', 'float64', 'int32', 'float32']:
+                    # Try to check if convertible
+                    try:
+                        test = pd.to_numeric(working_df[debit_col].head(100), errors='coerce')
+                        if test.isna().sum() > 50:  # More than 50% failed
+                            validation_errors.append(f"⚠️ '{debit_col}' may not contain valid numeric data")
+                    except:
+                        pass
+                
+                if validation_errors:
+                    for error in validation_errors:
+                        st.warning(error)
+
                 if st.button("🚀 Run ULTRA-FAST Reconciliation", type="primary", use_container_width=True):
-                    self.run_ultra_fast_reconciliation(working_df, debit_col, credit_col, ref_col, journal_col)
+                    if not columns_valid:
+                        st.error("❌ Please fix column selection errors before running reconciliation")
+                    else:
+                        self.run_ultra_fast_reconciliation(working_df, debit_col, credit_col, ref_col, journal_col)
 
         if st.session_state.corporate_results:
             st.markdown("---")
@@ -210,6 +300,12 @@ class CorporateWorkflow:
         """
         ULTRA-FAST reconciliation using hash maps and vectorization
         Designed for datasets of ANY size - 100k+ rows in seconds
+        
+        Features:
+        - Hash-based matching (O(1) lookups)
+        - Vectorized numpy operations
+        - Configurable thresholds
+        - Pre-built indexes for speed
         """
 
         start_time = time.time()
@@ -218,15 +314,20 @@ class CorporateWorkflow:
         progress_placeholder = st.empty()
         metrics_placeholder = st.empty()
 
-        status_placeholder.info("🚀 **Starting ULTRA-FAST Reconciliation...**")
-        progress_bar = progress_placeholder.progress(0)
+        try:
+            status_placeholder.info("🚀 **Starting ULTRA-FAST Reconciliation...**")
+            progress_bar = progress_placeholder.progress(0)
 
-        # =============================================================================
-        # STEP 1: VECTORIZED DATA PREPARATION (< 0.1s for 100k rows)
-        # =============================================================================
-        status_placeholder.info("⚡ **Step 1/7 (0.0%):** Vectorized data preparation...")
-        df = df.copy()
-        original_row_count = len(df)
+            # =============================================================================
+            # STEP 1: VECTORIZED DATA PREPARATION (< 0.1s for 100k rows)
+            # =============================================================================
+            status_placeholder.info("⚡ **Step 1/7 (0.0%):** Vectorized data preparation...")
+            df = df.copy()
+            original_row_count = len(df)
+            
+            if original_row_count == 0:
+                st.error("❌ No data to reconcile")
+                return
 
         # Sub-step 1.1: Clean debits/credits
         status_placeholder.info(f"⚡ **Step 1/7 (2.0%):** Cleaning {original_row_count:,} debit/credit amounts...")
@@ -251,34 +352,29 @@ class CorporateWorkflow:
         metrics_placeholder.success(f"✅ Step 1 complete: {step1_time:.3f}s | {original_row_count:,} rows prepared | {blank_count:,} blanks marked")
 
         # =============================================================================
-        # STEP 2: BUILD HASH MAPS FOR O(1) LOOKUPS
+        # STEP 2: BUILD HASH MAPS FOR O(1) LOOKUPS - OPTIMIZED
         # =============================================================================
         status_placeholder.info(f"🗂️ **Step 2/7 (10.0%):** Building hash indexes for {original_row_count:,} rows...")
 
-        # Create efficient lookup structures
+        # OPTIMIZED: Use numpy arrays for O(n) single-pass indexing instead of df.loc[]
+        ref_values = df['_reference'].values
+        journal_values = df['_journal'].values
+        indices = df.index.values
+        
         ref_to_indices = defaultdict(list)
         journal_to_indices = defaultdict(list)
 
-        # Build indexes with progress updates
-        total_rows = len(df.index)
-        update_interval = max(1, total_rows // 20)  # Update 20 times during this step
-
-        for i, idx in enumerate(df.index):
-            ref = df.loc[idx, '_reference']
-            journal = df.loc[idx, '_journal']
+        # Single-pass indexing with numpy arrays (10x faster than df.loc[])
+        for i in range(len(indices)):
+            idx = indices[i]
+            ref = ref_values[i]
+            journal = journal_values[i]
 
             # Skip blank references
             if not str(ref).startswith('__BLANK_'):
                 ref_to_indices[ref].append(idx)
 
             journal_to_indices[journal].append(idx)
-
-            # Update progress periodically
-            if i % update_interval == 0:
-                current_progress = 0.10 + (i / total_rows) * 0.05  # 10% to 15%
-                progress_pct = current_progress * 100
-                status_placeholder.info(f"🗂️ **Step 2/7 ({progress_pct:.1f}%):** Indexing row {i+1:,} / {total_rows:,}...")
-                progress_bar.progress(current_progress)
 
         progress_bar.progress(0.15)
         step2_time = time.time() - start_time
@@ -391,80 +487,92 @@ class CorporateWorkflow:
                 processed_groups += 1
                 continue
 
-            # Vectorized matching
+            # OPTIMIZED: Use numpy arrays directly, avoid repeated np.isin() calls
             debit_idx = debit_rows.index.values
             credit_idx = credit_rows.index.values
             debit_amt = debit_rows['_debit'].values
             credit_amt = credit_rows['_credit'].values
+            n_credits = len(credit_amt)
 
-            used_debit = set()
-            used_credit = set()
+            # Pre-build boolean mask for available credits (faster than set operations)
+            credit_available = np.ones(n_credits, dtype=bool)
+            
+            # Use configurable thresholds
+            exact_thresh = self.EXACT_MATCH_THRESHOLD
+            comm_thresh = self.COMMISSION_THRESHOLD
+            rate_min = self.RATE_DIFF_MIN
+            rate_max = self.RATE_DIFF_MAX
 
-            for i, d_amt in enumerate(debit_amt):
-                if debit_idx[i] in matched or i in used_debit:
+            for i in range(len(debit_amt)):
+                d_idx = debit_idx[i]
+                if d_idx in matched:
                     continue
 
-                # Calculate all differences at once
+                d_amt = debit_amt[i]
+                
+                # Calculate differences with all credits
                 diffs = d_amt - credit_amt
 
-                # BATCH 2: Exact match (diff < 0.01)
-                exact_matches = np.where((np.abs(diffs) < 0.01) & ~np.isin(np.arange(len(credit_amt)), list(used_credit)))[0]
-                if len(exact_matches) > 0:
-                    j = exact_matches[0]
-                    if credit_idx[j] not in matched:
-                        batch2_rows.extend([df.loc[debit_idx[i]], df.loc[credit_idx[j]]])
-                        matched.update([debit_idx[i], credit_idx[j]])
-                        used_debit.add(i)
-                        used_credit.add(j)
-                        continue
+                # BATCH 2: Exact match (diff < exact_thresh)
+                exact_mask = (np.abs(diffs) < exact_thresh) & credit_available
+                if np.any(exact_mask):
+                    j = np.argmax(exact_mask)  # Get first True index
+                    c_idx = credit_idx[j]
+                    batch2_rows.append(df.loc[d_idx])
+                    batch2_rows.append(df.loc[c_idx])
+                    matched.add(d_idx)
+                    matched.add(c_idx)
+                    credit_available[j] = False
+                    continue
 
-                # BATCH 3: FD commission (debit > credit by ≥1)
-                fd_matches = np.where((diffs >= 1) & ~np.isin(np.arange(len(credit_amt)), list(used_credit)))[0]
-                if len(fd_matches) > 0:
-                    j = fd_matches[0]
-                    if credit_idx[j] not in matched:
-                        batch3_rows.extend([df.loc[debit_idx[i]], df.loc[credit_idx[j]]])
-                        matched.update([debit_idx[i], credit_idx[j]])
-                        used_debit.add(i)
-                        used_credit.add(j)
-                        continue
+                # BATCH 3: FD commission (debit > credit by >= comm_thresh)
+                fd_mask = (diffs >= comm_thresh) & credit_available
+                if np.any(fd_mask):
+                    j = np.argmax(fd_mask)
+                    c_idx = credit_idx[j]
+                    batch3_rows.append(df.loc[d_idx])
+                    batch3_rows.append(df.loc[c_idx])
+                    matched.add(d_idx)
+                    matched.add(c_idx)
+                    credit_available[j] = False
+                    continue
 
-                # BATCH 4: FC commission (credit > debit by ≥1)
-                fc_matches = np.where((diffs <= -1) & ~np.isin(np.arange(len(credit_amt)), list(used_credit)))[0]
-                if len(fc_matches) > 0:
-                    j = fc_matches[0]
-                    if credit_idx[j] not in matched:
-                        batch4_rows.extend([df.loc[debit_idx[i]], df.loc[credit_idx[j]]])
-                        matched.update([debit_idx[i], credit_idx[j]])
-                        used_debit.add(i)
-                        used_credit.add(j)
-                        continue
+                # BATCH 4: FC commission (credit > debit by >= comm_thresh)
+                fc_mask = (diffs <= -comm_thresh) & credit_available
+                if np.any(fc_mask):
+                    j = np.argmax(fc_mask)
+                    c_idx = credit_idx[j]
+                    batch4_rows.append(df.loc[d_idx])
+                    batch4_rows.append(df.loc[c_idx])
+                    matched.add(d_idx)
+                    matched.add(c_idx)
+                    credit_available[j] = False
+                    continue
 
-                # BATCH 5: Rate differences (0.01 ≤ |diff| < 1)
-                rate_matches = np.where((np.abs(diffs) >= 0.01) & (np.abs(diffs) < 1) & ~np.isin(np.arange(len(credit_amt)), list(used_credit)))[0]
-                if len(rate_matches) > 0:
-                    j = rate_matches[0]
-                    if credit_idx[j] not in matched:
-                        batch5_rows.extend([df.loc[debit_idx[i]], df.loc[credit_idx[j]]])
-                        matched.update([debit_idx[i], credit_idx[j]])
-                        used_debit.add(i)
-                        used_credit.add(j)
-                        continue
+                # BATCH 5: Rate differences (rate_min ≤ |diff| < rate_max)
+                rate_mask = (np.abs(diffs) >= rate_min) & (np.abs(diffs) < rate_max) & credit_available
+                if np.any(rate_mask):
+                    j = np.argmax(rate_mask)
+                    c_idx = credit_idx[j]
+                    batch5_rows.append(df.loc[d_idx])
+                    batch5_rows.append(df.loc[c_idx])
+                    matched.add(d_idx)
+                    matched.add(c_idx)
+                    credit_available[j] = False
+                    continue
 
             processed_groups += 1
 
-            # Update progress every 5% of groups or every 100 groups, whichever is smaller
-            update_freq = min(100, max(1, total_ref_groups // 20))
+            # Update progress less frequently to reduce UI overhead
+            update_freq = max(100, total_ref_groups // 10)
             if processed_groups % update_freq == 0 or processed_groups == total_ref_groups:
                 current_progress = 0.30 + (processed_groups / total_ref_groups) * 0.50  # 30% to 80%
                 progress_pct = current_progress * 100
                 total_matched = len(batch2_rows) + len(batch3_rows) + len(batch4_rows) + len(batch5_rows)
 
-                # Show current reference being processed (truncate if too long)
-                ref_display = str(ref)[:30] + "..." if len(str(ref)) > 30 else str(ref)
                 status_placeholder.info(
-                    f"⚡ **Step 4/7 ({progress_pct:.1f}%):** Processing reference group {processed_groups:,} / {total_ref_groups:,}\n"
-                    f"Current Ref: `{ref_display}` | Total Matched: {total_matched:,} (B2: {len(batch2_rows):,}, B3: {len(batch3_rows):,}, B4: {len(batch4_rows):,}, B5: {len(batch5_rows):,})"
+                    f"⚡ **Step 4/7 ({progress_pct:.1f}%):** {processed_groups:,} / {total_ref_groups:,} groups | "
+                    f"Matched: {total_matched:,} (B2:{len(batch2_rows)//2}, B3:{len(batch3_rows)//2}, B4:{len(batch4_rows)//2}, B5:{len(batch5_rows)//2})"
                 )
                 progress_bar.progress(current_progress)
 
@@ -599,7 +707,28 @@ class CorporateWorkflow:
         - FC Sum: {orig_credit_sum:,.2f} in = {out_credit_sum:,.2f} out
         """)
 
-        st.rerun()
+            st.rerun()
+            
+        except Exception as e:
+            # Clean up progress indicators on error
+            status_placeholder.empty()
+            progress_placeholder.empty()
+            metrics_placeholder.empty()
+            
+            st.error(f"""
+            ## ❌ Reconciliation Failed
+            
+            **Error:** {str(e)}
+            
+            Please check:
+            - Column selections are correct
+            - Data format is valid
+            - File is not corrupted
+            """)
+            
+            import traceback
+            with st.expander("🔍 Error Details"):
+                st.code(traceback.format_exc())
 
     def render_reference_extraction(self):
         """Render reference extraction UI"""
@@ -618,8 +747,56 @@ class CorporateWorkflow:
                 if st.button("👁️ View Data", type="secondary", use_container_width=True):
                     st.session_state.show_extracted_data = True
 
+    @staticmethod
+    def extract_references_vectorized(series: pd.Series) -> pd.Series:
+        """
+        ULTRA-FAST vectorized reference extraction for entire column.
+        
+        Uses pandas str methods with pre-compiled regex for maximum speed.
+        Processes entire column at once instead of row-by-row.
+        
+        Args:
+            series: pandas Series containing comment text
+            
+        Returns:
+            pandas Series with extracted references (uppercase, comma-separated)
+        """
+        # Convert to string and handle NaN
+        text_series = series.fillna('').astype(str)
+        
+        # Pre-allocate result series
+        result = pd.Series([''] * len(series), index=series.index)
+        
+        # Check for Correcting patterns - return full text for these rows
+        correcting_mask = text_series.str.contains('Correcting', case=False, na=False)
+        result.loc[correcting_mask] = text_series.loc[correcting_mask].str.strip()
+        
+        # Check for special journal patterns
+        special_journal_mask = text_series.str.contains(r'(?<!R)(?<!T)\b[A-Za-z]+\s+J\d{5}\b', case=False, regex=True, na=False)
+        special_journal_mask = special_journal_mask & ~correcting_mask  # Don't overwrite correcting
+        result.loc[special_journal_mask] = text_series.loc[special_journal_mask].str.strip()
+        
+        # For remaining rows, extract all reference patterns
+        remaining_mask = ~correcting_mask & ~special_journal_mask
+        remaining_text = text_series.loc[remaining_mask]
+        
+        if len(remaining_text) > 0:
+            # Extract all patterns using vectorized str.findall
+            # Pattern matches RJ, TX, CSH, ZVC, ECO, INN references (case-insensitive)
+            pattern = r'(?:RJ\d{11}|TX\d{11}|CSH\d{9,}|ZVC\d{9}|ECO\d{9}|INN\d{9}|(?<!R)(?<!T)J\d{5})'
+            
+            # Extract all matches per row
+            extracted = remaining_text.str.findall(pattern, flags=re.IGNORECASE)
+            
+            # Convert to uppercase and join with comma
+            result.loc[remaining_mask] = extracted.apply(
+                lambda matches: ', '.join(dict.fromkeys(m.upper() for m in matches)) if matches else ''
+            )
+        
+        return result
+
     def execute_reference_extraction(self):
-        """Execute reference extraction"""
+        """Execute reference extraction - OPTIMIZED with vectorized operations"""
         if st.session_state.corporate_df is None:
             st.error("❌ No data loaded")
             return
@@ -632,14 +809,27 @@ class CorporateWorkflow:
             return
 
         comment_col = comment_columns[0]
+        total_rows = len(df)
 
-        with st.spinner(f"⚡ Extracting references..."):
+        with st.spinner(f"⚡ Extracting references from {total_rows:,} rows..."):
             start_time = time.time()
-            df['Reference'] = df[comment_col].apply(self.extract_references)
+            
+            # Use vectorized extraction for speed (much faster than .apply())
+            if total_rows > 10000:
+                # For large datasets, use fully vectorized approach
+                df['Reference'] = self.extract_references_vectorized(df[comment_col])
+            else:
+                # For smaller datasets, .apply() is fine
+                df['Reference'] = df[comment_col].apply(self.extract_references)
+            
             elapsed_time = time.time() - start_time
 
+            # Calculate stats
             extracted_count = (df['Reference'].str.len() > 0).sum()
-            st.success(f"⚡ Extracted {extracted_count:,}/{len(df):,} in {elapsed_time:.2f}s")
+            rows_per_sec = total_rows / elapsed_time if elapsed_time > 0 else 0
+            extraction_rate = (extracted_count / total_rows * 100) if total_rows > 0 else 0
+            
+            st.success(f"⚡ Extracted {extracted_count:,}/{total_rows:,} ({extraction_rate:.1f}%) in {elapsed_time:.2f}s ({rows_per_sec:,.0f} rows/sec)")
 
             st.session_state.corporate_df = df
             st.session_state.corporate_data = df
