@@ -84,15 +84,17 @@ class CorporateWorkflow:
 
     # Pre-compiled regex patterns for MAXIMUM extraction speed (compiled once, used many times)
     # All patterns are CASE-INSENSITIVE to handle rj/RJ, csh/CSH, etc.
+    # IMPROVED: Added word boundaries (\b) to prevent extracting from within other words
+    # IMPROVED: Made ZVC, ECO, INN flexible (9+ digits) like CSH
     _REFERENCE_PATTERN = re.compile(
         r'''
-        (?P<rj>RJ\d{11})           |  # RJ patterns: RJ + 11 digits (e.g., RJ59159065012, rj58044672280)
-        (?P<tx>TX\d{11})           |  # TX patterns: TX + 11 digits
-        (?P<csh>CSH\d{9,})         |  # CSH patterns: CSH + 9+ digits (e.g., CSH710230082, CSH021131898)
-        (?P<zvc>ZVC\d{9})          |  # ZVC patterns: ZVC + 9 digits (e.g., ZVC083448501)
-        (?P<eco>ECO\d{9})          |  # ECO patterns: ECO + 9 digits
-        (?P<inn>INN\d{9})          |  # INN patterns: INN + 9 digits
-        (?P<journal>(?<!R)(?<!T)J\d{5})  # Journal entries: J + 5 digits (not preceded by R or T)
+        (?<![A-Za-z])(?P<rj>RJ\d{11})(?!\d)       |  # RJ patterns: RJ + 11 digits (e.g., RJ59159065012, rj58044672280)
+        (?<![A-Za-z])(?P<tx>TX\d{11})(?!\d)       |  # TX patterns: TX + 11 digits
+        (?<![A-Za-z])(?P<csh>CSH\d{9,})(?!\d)     |  # CSH patterns: CSH + 9+ digits (e.g., CSH710230082, CSH021131898)
+        (?<![A-Za-z])(?P<zvc>ZVC\d{9,})(?!\d)     |  # ZVC patterns: ZVC + 9+ digits (e.g., ZVC083448501, ZVC1234567890)
+        (?<![A-Za-z])(?P<eco>ECO\d{9,})(?!\d)     |  # ECO patterns: ECO + 9+ digits
+        (?<![A-Za-z])(?P<inn>INN\d{9,})(?!\d)     |  # INN patterns: INN + 9+ digits
+        (?<![A-Za-z])(?<!R)(?<!T)(?P<journal>J\d{5})(?!\d)  # Journal entries: J + 5 digits (not preceded by R, T, or letter)
         ''',
         re.IGNORECASE | re.VERBOSE
     )
@@ -103,21 +105,30 @@ class CorporateWorkflow:
     def extract_references(comment_text):
         """
         Extract RJ, TX, CSH, ZVC, ECO, INN reference numbers from comment text.
-        
+
         OPTIMIZED VERSION:
         - Pre-compiled regex (compiled once at class level)
         - Single regex pass instead of 7 separate calls
         - Case-insensitive matching (handles rj/RJ, csh/CSH, etc.)
         - Normalizes output to UPPERCASE for consistent matching
-        
-        Supported patterns:
+        - Word boundary protection (won't extract from XCSH123... or ABRJ123...)
+
+        Supported patterns (with word boundaries):
         - RJ + 11 digits: RJ59159065012, rj58044672280
         - TX + 11 digits: TX12345678901
         - CSH + 9+ digits: CSH710230082, CSH021131898, CSH632914678
-        - ZVC + 9 digits: ZVC083448501
-        - ECO + 9 digits: ECO123456789
-        - INN + 9 digits: INN123456789
-        - J + 5 digits: J12345 (not preceded by R or T)
+        - ZVC + 9+ digits: ZVC083448501, ZVC1234567890
+        - ECO + 9+ digits: ECO123456789, ECO1234567890
+        - INN + 9+ digits: INN123456789, INN1234567890
+        - J + 5 digits: J12345 (not preceded by R, T, or any letter)
+
+        Formats handled:
+        - Out: CSH710230082: Arom
+        - In: CSH021131898: Langelihle Dube
+        - Tilltrade Xchange: rj58044672280
+        - Reversal: CSH457317440: Macebo
+        - Ref RJ59159065012 Payment ref Diepsloot
+        - In: ZVC083448501: Nkosi Julius nkomo
         """
         if pd.isna(comment_text) or not isinstance(comment_text, str):
             return ""
@@ -329,383 +340,391 @@ class CorporateWorkflow:
                 st.error("❌ No data to reconcile")
                 return
 
-        # Sub-step 1.1: Clean debits/credits
-        status_placeholder.info(f"⚡ **Step 1/7 (2.0%):** Cleaning {original_row_count:,} debit/credit amounts...")
-        df['_debit'] = pd.to_numeric(df[debit_col], errors='coerce').fillna(0).abs()
-        df['_credit'] = pd.to_numeric(df[credit_col], errors='coerce').fillna(0).abs()
-        progress_bar.progress(0.02)
+            # Sub-step 1.1: Clean debits/credits
+            status_placeholder.info(f"⚡ **Step 1/7 (2.0%):** Cleaning {original_row_count:,} debit/credit amounts...")
+            df['_debit'] = pd.to_numeric(df[debit_col], errors='coerce').fillna(0).abs()
+            df['_credit'] = pd.to_numeric(df[credit_col], errors='coerce').fillna(0).abs()
+            progress_bar.progress(0.02)
 
-        # Sub-step 1.2: Clean references/journals (CASE-INSENSITIVE)
-        status_placeholder.info(f"⚡ **Step 1/7 (5.0%):** Normalizing references and journals...")
-        df['_reference'] = df[ref_col].astype(str).str.strip().str.upper()  # Already uppercase
-        df['_journal'] = df[journal_col].astype(str).str.strip().str.upper()  # Make case-insensitive
-        progress_bar.progress(0.05)
+            # Sub-step 1.2: Clean references/journals (CASE-INSENSITIVE)
+            status_placeholder.info(f"⚡ **Step 1/7 (5.0%):** Normalizing references and journals...")
+            df['_reference'] = df[ref_col].astype(str).str.strip().str.upper()  # Already uppercase
+            df['_journal'] = df[journal_col].astype(str).str.strip().str.upper()  # Make case-insensitive
+            progress_bar.progress(0.05)
 
-        # Sub-step 1.3: Mark blank references
-        status_placeholder.info(f"⚡ **Step 1/7 (8.0%):** Marking blank references with unique IDs...")
-        blank_mask = df['_reference'].isin(['', 'NAN', 'NONE', 'NULL', '0', 'NATT'])
-        blank_count = blank_mask.sum()
-        df.loc[blank_mask, '_reference'] = [f'__BLANK_{i}__' for i in range(blank_count)]
-        progress_bar.progress(0.10)
+            # Sub-step 1.3: Mark blank references
+            status_placeholder.info(f"⚡ **Step 1/7 (8.0%):** Marking blank references with unique IDs...")
+            blank_mask = df['_reference'].isin(['', 'NAN', 'NONE', 'NULL', '0', 'NATT'])
+            blank_count = blank_mask.sum()
+            df.loc[blank_mask, '_reference'] = [f'__BLANK_{i}__' for i in range(blank_count)]
+            progress_bar.progress(0.10)
 
-        step1_time = time.time() - start_time
-        metrics_placeholder.success(f"✅ Step 1 complete: {step1_time:.3f}s | {original_row_count:,} rows prepared | {blank_count:,} blanks marked")
+            step1_time = time.time() - start_time
+            metrics_placeholder.success(f"✅ Step 1 complete: {step1_time:.3f}s | {original_row_count:,} rows prepared | {blank_count:,} blanks marked")
 
-        # =============================================================================
-        # STEP 2: BUILD HASH MAPS FOR O(1) LOOKUPS - OPTIMIZED
-        # =============================================================================
-        status_placeholder.info(f"🗂️ **Step 2/7 (10.0%):** Building hash indexes for {original_row_count:,} rows...")
+            # =============================================================================
+            # STEP 2: BUILD HASH MAPS FOR O(1) LOOKUPS - OPTIMIZED
+            # =============================================================================
+            status_placeholder.info(f"🗂️ **Step 2/7 (10.0%):** Building hash indexes for {original_row_count:,} rows...")
 
-        # OPTIMIZED: Use numpy arrays for O(n) single-pass indexing instead of df.loc[]
-        ref_values = df['_reference'].values
-        journal_values = df['_journal'].values
-        indices = df.index.values
+            # OPTIMIZED: Use numpy arrays for O(n) single-pass indexing instead of df.loc[]
+            ref_values = df['_reference'].values
+            journal_values = df['_journal'].values
+            indices = df.index.values
         
-        ref_to_indices = defaultdict(list)
-        journal_to_indices = defaultdict(list)
+            ref_to_indices = defaultdict(list)
+            journal_to_indices = defaultdict(list)
 
-        # Single-pass indexing with numpy arrays (10x faster than df.loc[])
-        for i in range(len(indices)):
-            idx = indices[i]
-            ref = ref_values[i]
-            journal = journal_values[i]
+            # Single-pass indexing with numpy arrays (10x faster than df.loc[])
+            for i in range(len(indices)):
+                idx = indices[i]
+                ref = ref_values[i]
+                journal = journal_values[i]
 
-            # Skip blank references
-            if not str(ref).startswith('__BLANK_'):
-                ref_to_indices[ref].append(idx)
+                # Skip blank references
+                if not str(ref).startswith('__BLANK_'):
+                    ref_to_indices[ref].append(idx)
 
-            journal_to_indices[journal].append(idx)
+                journal_to_indices[journal].append(idx)
 
-        progress_bar.progress(0.15)
-        step2_time = time.time() - start_time
-        unique_refs = len(ref_to_indices)
-        unique_journals = len(journal_to_indices)
-        metrics_placeholder.success(f"✅ Step 2 complete: {step2_time-step1_time:.3f}s | {unique_refs:,} unique refs | {unique_journals:,} journals indexed")
+            progress_bar.progress(0.15)
+            step2_time = time.time() - start_time
+            unique_refs = len(ref_to_indices)
+            unique_journals = len(journal_to_indices)
+            metrics_placeholder.success(f"✅ Step 2 complete: {step2_time-step1_time:.3f}s | {unique_refs:,} unique refs | {unique_journals:,} journals indexed")
 
-        # Initialize tracking
-        matched = set()
-        batch1_rows = []
-        batch2_rows = []
-        batch3_rows = []
-        batch4_rows = []
-        batch5_rows = []
+            # Initialize tracking
+            # OPTIMIZATION: Store indices instead of row data - much faster
+            # DataFrame creation from indices at end is more efficient
+            matched = set()
+            batch1_indices = []
+            batch2_indices = []
+            batch3_indices = []
+            batch4_indices = []
+            batch5_indices = []
 
-        # =============================================================================
-        # BATCH 1: CORRECTING JOURNALS (Ultra-fast vectorized matching)
-        # =============================================================================
-        status_placeholder.info("🔍 **Step 3/7 (15.0%):** Batch 1 - Correcting Journals...")
+            # =============================================================================
+            # BATCH 1: CORRECTING JOURNALS (Ultra-fast vectorized matching)
+            # =============================================================================
+            status_placeholder.info("🔍 **Step 3/7 (15.0%):** Batch 1 - Correcting Journals...")
 
-        # Extract all correcting journal references with vectorized regex
-        correcting_mask = df['_reference'].str.contains('CORRECTING', na=False, case=False)
-        correcting_df = df[correcting_mask].copy()
-        total_correcting = len(correcting_df)
+            # Extract all correcting journal references with vectorized regex
+            correcting_mask = df['_reference'].str.contains('CORRECTING', na=False, case=False)
+            correcting_df = df[correcting_mask].copy()
+            total_correcting = len(correcting_df)
 
-        if total_correcting > 0:
-            # Vectorized extraction of journal numbers from "Correcting J239918" format
-            # Extract just the digits after "J" - handles J239918, J1, J239, etc.
-            correcting_df['_journal_num'] = correcting_df['_reference'].str.extract(r'J(\d+)', flags=re.IGNORECASE)[0]
+            if total_correcting > 0:
+                # Vectorized extraction of journal numbers from "Correcting J239918" format
+                # Extract just the digits after "J" - handles J239918, J1, J239, etc.
+                correcting_df['_journal_num'] = correcting_df['_reference'].str.extract(r'J(\d+)', flags=re.IGNORECASE)[0]
             
-            # Remove rows where extraction failed
-            valid_correcting = correcting_df[correcting_df['_journal_num'].notna()].copy()
+                # Remove rows where extraction failed
+                valid_correcting = correcting_df[correcting_df['_journal_num'].notna()].copy()
             
-            # Create normalized journal lookup for entire dataframe
-            # Convert journal to string, remove .0 decimal, strip whitespace
-            df['_journal_str'] = df['_journal'].astype(str).str.strip()
-            # Remove .0 from floats (e.g., '61705.0' -> '61705')
-            df['_journal_str'] = df['_journal_str'].str.replace(r'\.0$', '', regex=True)
+                # Create normalized journal lookup for entire dataframe
+                # Convert journal to string, remove .0 decimal, strip whitespace
+                df['_journal_str'] = df['_journal'].astype(str).str.strip()
+                # Remove .0 from floats (e.g., '61705.0' -> '61705')
+                df['_journal_str'] = df['_journal_str'].str.replace(r'\.0$', '', regex=True)
             
-            # Create a journal lookup dictionary for FAST O(1) matching
-            # Key: normalized journal (no leading zeros, no decimals), Value: list of indices
-            journal_lookup = {}
-            for idx in df.index:
-                if idx not in matched:
-                    j_str = df.loc[idx, '_journal_str']
-                    # Normalize: remove leading zeros and handle decimals
-                    j_normalized = j_str.lstrip('0') or '0'
-                    if j_normalized not in journal_lookup:
-                        journal_lookup[j_normalized] = []
-                    journal_lookup[j_normalized].append(idx)
+                # Create a journal lookup dictionary for FAST O(1) matching
+                # Key: normalized journal (no leading zeros, no decimals), Value: list of indices
+                journal_lookup = {}
+                for idx in df.index:
+                    if idx not in matched:
+                        j_str = df.loc[idx, '_journal_str']
+                        # Normalize: remove leading zeros and handle decimals
+                        j_normalized = j_str.lstrip('0') or '0'
+                        if j_normalized not in journal_lookup:
+                            journal_lookup[j_normalized] = []
+                        journal_lookup[j_normalized].append(idx)
             
-            # Match each correcting journal
-            for idx, corr_row in valid_correcting.iterrows():
-                if idx in matched:
+                # Match each correcting journal
+                # OPTIMIZATION: Use itertuples() instead of iterrows() - 10x faster
+                for corr_row in valid_correcting.itertuples():
+                    idx = corr_row.Index
+                    if idx in matched:
+                        continue
+
+                    # Extract journal number from correcting reference
+                    journal_num = corr_row._journal_num
+                    if pd.isna(journal_num):
+                        continue
+                    journal_normalized = str(journal_num).lstrip('0') or '0'
+
+                    # Look up matching journals using hash map (O(1))
+                    if journal_normalized in journal_lookup:
+                        potential_indices = journal_lookup[journal_normalized]
+
+                        # Find first unmatched transaction with this journal (excluding self)
+                        for match_idx in potential_indices:
+                            if match_idx != idx and match_idx not in matched:
+                                # OPTIMIZATION: Store indices, not row data
+                                batch1_indices.append(match_idx)
+                                batch1_indices.append(idx)
+                                matched.add(idx)
+                                matched.add(match_idx)
+                                # Remove from lookup to prevent reuse
+                                journal_lookup[journal_normalized].remove(match_idx)
+                                break
+            
+                # Cleanup temporary columns
+                df.drop(columns=['_journal_str'], inplace=True, errors='ignore')
+
+            progress_bar.progress(0.30)
+            step3_time = time.time() - start_time
+            batch1_pairs = len(batch1_indices) // 2 if len(batch1_indices) > 0 else 0
+            metrics_placeholder.success(f"✅ Batch 1 complete: {step3_time-step2_time:.3f}s | {len(batch1_indices):,} transactions in {batch1_pairs:,} pairs ({total_correcting:,} correcting entries found)")
+
+            # =============================================================================
+            # BATCH 2-5: VECTORIZED MATCHING WITH HASH LOOKUP
+            # =============================================================================
+            status_placeholder.info("⚡ **Step 4/7 (30.0%):** Batches 2-5 - Ultra-fast vectorized matching...")
+
+            # Process only unmatched transactions
+            unmatched_mask = ~df.index.isin(matched)
+            unmatched_df = df[unmatched_mask].copy()
+
+            # Group by reference for batch processing
+            grouped_refs = list(unmatched_df.groupby('_reference'))
+            total_ref_groups = len(grouped_refs)
+            processed_groups = 0
+
+            for ref, group in grouped_refs:
+                # Skip blanks
+                if str(ref).startswith('__BLANK_') or len(group) < 2:
+                    processed_groups += 1
                     continue
-                
-                # Extract journal number from correcting reference
-                journal_num = corr_row['_journal_num']
-                journal_normalized = journal_num.lstrip('0') or '0'
-                
-                # Look up matching journals using hash map (O(1))
-                if journal_normalized in journal_lookup:
-                    potential_indices = journal_lookup[journal_normalized]
-                    
-                    # Find first unmatched transaction with this journal (excluding self)
-                    for match_idx in potential_indices:
-                        if match_idx != idx and match_idx not in matched:
-                            # Add as paired rows (matched transaction FIRST, then correcting)
-                            batch1_rows.append(df.loc[match_idx])
-                            batch1_rows.append(df.loc[idx])
-                            matched.add(idx)
-                            matched.add(match_idx)
-                            # Remove from lookup to prevent reuse
-                            journal_lookup[journal_normalized].remove(match_idx)
-                            break
+
+                # Split into debit/credit
+                debit_rows = group[group['_debit'] > 0]
+                credit_rows = group[group['_credit'] > 0]
+
+                if len(debit_rows) == 0 or len(credit_rows) == 0:
+                    processed_groups += 1
+                    continue
+
+                # OPTIMIZED: Use numpy arrays directly, avoid repeated np.isin() calls
+                debit_idx = debit_rows.index.values
+                credit_idx = credit_rows.index.values
+                debit_amt = debit_rows['_debit'].values
+                credit_amt = credit_rows['_credit'].values
+                n_credits = len(credit_amt)
+
+                # Pre-build boolean mask for available credits (faster than set operations)
+                credit_available = np.ones(n_credits, dtype=bool)
             
-            # Cleanup temporary columns
-            df.drop(columns=['_journal_str'], inplace=True, errors='ignore')
+                # Use configurable thresholds
+                exact_thresh = self.EXACT_MATCH_THRESHOLD
+                comm_thresh = self.COMMISSION_THRESHOLD
+                rate_min = self.RATE_DIFF_MIN
+                rate_max = self.RATE_DIFF_MAX
 
-        progress_bar.progress(0.30)
-        step3_time = time.time() - start_time
-        batch1_pairs = len(batch1_rows) // 2 if len(batch1_rows) > 0 else 0
-        metrics_placeholder.success(f"✅ Batch 1 complete: {step3_time-step2_time:.3f}s | {len(batch1_rows):,} transactions in {batch1_pairs:,} pairs ({total_correcting:,} correcting entries found)")
+                for i in range(len(debit_amt)):
+                    d_idx = debit_idx[i]
+                    if d_idx in matched:
+                        continue
 
-        # =============================================================================
-        # BATCH 2-5: VECTORIZED MATCHING WITH HASH LOOKUP
-        # =============================================================================
-        status_placeholder.info("⚡ **Step 4/7 (30.0%):** Batches 2-5 - Ultra-fast vectorized matching...")
+                    d_amt = debit_amt[i]
+                
+                    # Calculate differences with all credits
+                    diffs = d_amt - credit_amt
 
-        # Process only unmatched transactions
-        unmatched_mask = ~df.index.isin(matched)
-        unmatched_df = df[unmatched_mask].copy()
+                    # BATCH 2: Exact match (diff < exact_thresh)
+                    exact_mask = (np.abs(diffs) < exact_thresh) & credit_available
+                    if np.any(exact_mask):
+                        j = np.argmax(exact_mask)  # Get first True index
+                        c_idx = credit_idx[j]
+                        # OPTIMIZATION: Store indices, not row data
+                        batch2_indices.append(d_idx)
+                        batch2_indices.append(c_idx)
+                        matched.add(d_idx)
+                        matched.add(c_idx)
+                        credit_available[j] = False
+                        continue
 
-        # Group by reference for batch processing
-        grouped_refs = list(unmatched_df.groupby('_reference'))
-        total_ref_groups = len(grouped_refs)
-        processed_groups = 0
+                    # BATCH 3: FD commission (debit > credit by >= comm_thresh)
+                    fd_mask = (diffs >= comm_thresh) & credit_available
+                    if np.any(fd_mask):
+                        j = np.argmax(fd_mask)
+                        c_idx = credit_idx[j]
+                        batch3_indices.append(d_idx)
+                        batch3_indices.append(c_idx)
+                        matched.add(d_idx)
+                        matched.add(c_idx)
+                        credit_available[j] = False
+                        continue
 
-        for ref, group in grouped_refs:
-            # Skip blanks
-            if str(ref).startswith('__BLANK_') or len(group) < 2:
+                    # BATCH 4: FC commission (credit > debit by >= comm_thresh)
+                    fc_mask = (diffs <= -comm_thresh) & credit_available
+                    if np.any(fc_mask):
+                        j = np.argmax(fc_mask)
+                        c_idx = credit_idx[j]
+                        batch4_indices.append(d_idx)
+                        batch4_indices.append(c_idx)
+                        matched.add(d_idx)
+                        matched.add(c_idx)
+                        credit_available[j] = False
+                        continue
+
+                    # BATCH 5: Rate differences (rate_min ≤ |diff| < rate_max)
+                    rate_mask = (np.abs(diffs) >= rate_min) & (np.abs(diffs) < rate_max) & credit_available
+                    if np.any(rate_mask):
+                        j = np.argmax(rate_mask)
+                        c_idx = credit_idx[j]
+                        batch5_indices.append(d_idx)
+                        batch5_indices.append(c_idx)
+                        matched.add(d_idx)
+                        matched.add(c_idx)
+                        credit_available[j] = False
+                        continue
+
                 processed_groups += 1
-                continue
 
-            # Split into debit/credit
-            debit_rows = group[group['_debit'] > 0]
-            credit_rows = group[group['_credit'] > 0]
+                # Update progress less frequently to reduce UI overhead
+                update_freq = max(100, total_ref_groups // 10)
+                if processed_groups % update_freq == 0 or processed_groups == total_ref_groups:
+                    current_progress = 0.30 + (processed_groups / total_ref_groups) * 0.50  # 30% to 80%
+                    progress_pct = current_progress * 100
+                    total_matched = len(batch2_indices) + len(batch3_indices) + len(batch4_indices) + len(batch5_indices)
 
-            if len(debit_rows) == 0 or len(credit_rows) == 0:
-                processed_groups += 1
-                continue
+                    status_placeholder.info(
+                        f"⚡ **Step 4/7 ({progress_pct:.1f}%):** {processed_groups:,} / {total_ref_groups:,} groups | "
+                        f"Matched: {total_matched:,} (B2:{len(batch2_indices)//2}, B3:{len(batch3_indices)//2}, B4:{len(batch4_indices)//2}, B5:{len(batch5_indices)//2})"
+                    )
+                    progress_bar.progress(current_progress)
 
-            # OPTIMIZED: Use numpy arrays directly, avoid repeated np.isin() calls
-            debit_idx = debit_rows.index.values
-            credit_idx = credit_rows.index.values
-            debit_amt = debit_rows['_debit'].values
-            credit_amt = credit_rows['_credit'].values
-            n_credits = len(credit_amt)
+            progress_bar.progress(0.80)
+            step4_time = time.time() - start_time
+            total_matched_2_5 = len(batch2_indices) + len(batch3_indices) + len(batch4_indices) + len(batch5_indices)
+            metrics_placeholder.success(f"✅ Batches 2-5 complete: {step4_time-step3_time:.3f}s | {total_matched_2_5:,} transactions | {processed_groups:,} ref groups processed")
 
-            # Pre-build boolean mask for available credits (faster than set operations)
-            credit_available = np.ones(n_credits, dtype=bool)
-            
-            # Use configurable thresholds
-            exact_thresh = self.EXACT_MATCH_THRESHOLD
-            comm_thresh = self.COMMISSION_THRESHOLD
-            rate_min = self.RATE_DIFF_MIN
-            rate_max = self.RATE_DIFF_MAX
+            # =============================================================================
+            # BATCH 6: UNMATCHED
+            # =============================================================================
+            status_placeholder.info("📊 **Step 5/7 (80.0%):** Batch 6 - Collecting unmatched transactions...")
+            batch6_idx_set = set(df.index) - matched
 
-            for i in range(len(debit_amt)):
-                d_idx = debit_idx[i]
-                if d_idx in matched:
-                    continue
+            # OPTIMIZATION: Create DataFrames from indices using .loc[] with list
+            # This is much faster than creating DataFrame from list of Series
+            status_placeholder.info("📊 **Step 5/7 (82.0%):** Creating Batch 1 DataFrame (Correcting Journals)...")
+            batch1_df = df.loc[batch1_indices].copy() if batch1_indices else pd.DataFrame()
+            progress_bar.progress(0.82)
 
-                d_amt = debit_amt[i]
-                
-                # Calculate differences with all credits
-                diffs = d_amt - credit_amt
+            status_placeholder.info("📊 **Step 5/7 (84.0%):** Creating Batch 2 DataFrame (Exact Matches)...")
+            batch2_df = df.loc[batch2_indices].copy() if batch2_indices else pd.DataFrame()
+            progress_bar.progress(0.84)
 
-                # BATCH 2: Exact match (diff < exact_thresh)
-                exact_mask = (np.abs(diffs) < exact_thresh) & credit_available
-                if np.any(exact_mask):
-                    j = np.argmax(exact_mask)  # Get first True index
-                    c_idx = credit_idx[j]
-                    batch2_rows.append(df.loc[d_idx])
-                    batch2_rows.append(df.loc[c_idx])
-                    matched.add(d_idx)
-                    matched.add(c_idx)
-                    credit_available[j] = False
-                    continue
+            status_placeholder.info("📊 **Step 5/7 (86.0%):** Creating Batch 3 DataFrame (FD Commission)...")
+            batch3_df = df.loc[batch3_indices].copy() if batch3_indices else pd.DataFrame()
+            progress_bar.progress(0.86)
 
-                # BATCH 3: FD commission (debit > credit by >= comm_thresh)
-                fd_mask = (diffs >= comm_thresh) & credit_available
-                if np.any(fd_mask):
-                    j = np.argmax(fd_mask)
-                    c_idx = credit_idx[j]
-                    batch3_rows.append(df.loc[d_idx])
-                    batch3_rows.append(df.loc[c_idx])
-                    matched.add(d_idx)
-                    matched.add(c_idx)
-                    credit_available[j] = False
-                    continue
+            status_placeholder.info("📊 **Step 5/7 (88.0%):** Creating Batch 4 DataFrame (FC Commission)...")
+            batch4_df = df.loc[batch4_indices].copy() if batch4_indices else pd.DataFrame()
+            progress_bar.progress(0.88)
 
-                # BATCH 4: FC commission (credit > debit by >= comm_thresh)
-                fc_mask = (diffs <= -comm_thresh) & credit_available
-                if np.any(fc_mask):
-                    j = np.argmax(fc_mask)
-                    c_idx = credit_idx[j]
-                    batch4_rows.append(df.loc[d_idx])
-                    batch4_rows.append(df.loc[c_idx])
-                    matched.add(d_idx)
-                    matched.add(c_idx)
-                    credit_available[j] = False
-                    continue
+            status_placeholder.info("📊 **Step 5/7 (90.0%):** Creating Batch 5 DataFrame (Rate Differences)...")
+            batch5_df = df.loc[batch5_indices].copy() if batch5_indices else pd.DataFrame()
+            progress_bar.progress(0.90)
 
-                # BATCH 5: Rate differences (rate_min ≤ |diff| < rate_max)
-                rate_mask = (np.abs(diffs) >= rate_min) & (np.abs(diffs) < rate_max) & credit_available
-                if np.any(rate_mask):
-                    j = np.argmax(rate_mask)
-                    c_idx = credit_idx[j]
-                    batch5_rows.append(df.loc[d_idx])
-                    batch5_rows.append(df.loc[c_idx])
-                    matched.add(d_idx)
-                    matched.add(c_idx)
-                    credit_available[j] = False
-                    continue
+            status_placeholder.info(f"📊 **Step 5/7 (92.0%):** Creating Batch 6 DataFrame ({len(batch6_idx_set):,} Unmatched)...")
+            batch6_df = df.loc[list(batch6_idx_set)].copy() if batch6_idx_set else pd.DataFrame()
+            progress_bar.progress(0.92)
 
-            processed_groups += 1
+            # =============================================================================
+            # DATA INTEGRITY VALIDATION
+            # =============================================================================
+            status_placeholder.info("✅ **Step 6/7 (92.0%):** Validating data integrity...")
 
-            # Update progress less frequently to reduce UI overhead
-            update_freq = max(100, total_ref_groups // 10)
-            if processed_groups % update_freq == 0 or processed_groups == total_ref_groups:
-                current_progress = 0.30 + (processed_groups / total_ref_groups) * 0.50  # 30% to 80%
-                progress_pct = current_progress * 100
-                total_matched = len(batch2_rows) + len(batch3_rows) + len(batch4_rows) + len(batch5_rows)
+            # Calculate row counts
+            status_placeholder.info("✅ **Step 6/7 (93.0%):** Validating row counts...")
+            total_output = len(batch1_df) + len(batch2_df) + len(batch3_df) + len(batch4_df) + len(batch5_df) + len(batch6_df)
+            progress_bar.progress(0.93)
 
-                status_placeholder.info(
-                    f"⚡ **Step 4/7 ({progress_pct:.1f}%):** {processed_groups:,} / {total_ref_groups:,} groups | "
-                    f"Matched: {total_matched:,} (B2:{len(batch2_rows)//2}, B3:{len(batch3_rows)//2}, B4:{len(batch4_rows)//2}, B5:{len(batch5_rows)//2})"
-                )
-                progress_bar.progress(current_progress)
+            # Calculate original sums
+            status_placeholder.info("✅ **Step 6/7 (95.0%):** Calculating original debit/credit sums...")
+            orig_debit_sum = df['_debit'].sum()
+            orig_credit_sum = df['_credit'].sum()
+            progress_bar.progress(0.95)
 
-        progress_bar.progress(0.80)
-        step4_time = time.time() - start_time
-        total_matched_2_5 = len(batch2_rows) + len(batch3_rows) + len(batch4_rows) + len(batch5_rows)
-        metrics_placeholder.success(f"✅ Batches 2-5 complete: {step4_time-step3_time:.3f}s | {total_matched_2_5:,} transactions | {processed_groups:,} ref groups processed")
+            # Calculate output sums
+            status_placeholder.info("✅ **Step 6/7 (97.0%):** Calculating output debit/credit sums...")
+            out_debit_sum = sum(b['_debit'].sum() if not b.empty and '_debit' in b.columns else 0
+                               for b in [batch1_df, batch2_df, batch3_df, batch4_df, batch5_df, batch6_df])
+            out_credit_sum = sum(b['_credit'].sum() if not b.empty and '_credit' in b.columns else 0
+                                for b in [batch1_df, batch2_df, batch3_df, batch4_df, batch5_df, batch6_df])
+            progress_bar.progress(0.97)
 
-        # =============================================================================
-        # BATCH 6: UNMATCHED
-        # =============================================================================
-        status_placeholder.info("📊 **Step 5/7 (80.0%):** Batch 6 - Collecting unmatched transactions...")
-        batch6_indices = set(df.index) - matched
+            # Check for issues
+            status_placeholder.info("✅ **Step 6/7 (98.0%):** Running integrity checks...")
+            has_duplicates = total_output != original_row_count
+            sum_mismatch = abs(orig_debit_sum - out_debit_sum) > 0.01 or abs(orig_credit_sum - out_credit_sum) > 0.01
+            progress_bar.progress(0.98)
 
-        # Create batch DataFrames with progress updates
-        status_placeholder.info("📊 **Step 5/7 (82.0%):** Creating Batch 1 DataFrame (Correcting Journals)...")
-        batch1_df = pd.DataFrame(batch1_rows) if batch1_rows else pd.DataFrame()
-        progress_bar.progress(0.82)
+            elapsed_time = time.time() - start_time
 
-        status_placeholder.info("📊 **Step 5/7 (84.0%):** Creating Batch 2 DataFrame (Exact Matches)...")
-        batch2_df = pd.DataFrame(batch2_rows) if batch2_rows else pd.DataFrame()
-        progress_bar.progress(0.84)
-
-        status_placeholder.info("📊 **Step 5/7 (86.0%):** Creating Batch 3 DataFrame (FD Commission)...")
-        batch3_df = pd.DataFrame(batch3_rows) if batch3_rows else pd.DataFrame()
-        progress_bar.progress(0.86)
-
-        status_placeholder.info("📊 **Step 5/7 (88.0%):** Creating Batch 4 DataFrame (FC Commission)...")
-        batch4_df = pd.DataFrame(batch4_rows) if batch4_rows else pd.DataFrame()
-        progress_bar.progress(0.88)
-
-        status_placeholder.info("📊 **Step 5/7 (90.0%):** Creating Batch 5 DataFrame (Rate Differences)...")
-        batch5_df = pd.DataFrame(batch5_rows) if batch5_rows else pd.DataFrame()
-        progress_bar.progress(0.90)
-
-        status_placeholder.info(f"📊 **Step 5/7 (92.0%):** Creating Batch 6 DataFrame ({len(batch6_indices):,} Unmatched)...")
-        batch6_df = df.loc[list(batch6_indices)].copy() if batch6_indices else pd.DataFrame()
-        progress_bar.progress(0.92)
-
-        # =============================================================================
-        # DATA INTEGRITY VALIDATION
-        # =============================================================================
-        status_placeholder.info("✅ **Step 6/7 (92.0%):** Validating data integrity...")
-
-        # Calculate row counts
-        status_placeholder.info("✅ **Step 6/7 (93.0%):** Validating row counts...")
-        total_output = len(batch1_df) + len(batch2_df) + len(batch3_df) + len(batch4_df) + len(batch5_df) + len(batch6_df)
-        progress_bar.progress(0.93)
-
-        # Calculate original sums
-        status_placeholder.info("✅ **Step 6/7 (95.0%):** Calculating original debit/credit sums...")
-        orig_debit_sum = df['_debit'].sum()
-        orig_credit_sum = df['_credit'].sum()
-        progress_bar.progress(0.95)
-
-        # Calculate output sums
-        status_placeholder.info("✅ **Step 6/7 (97.0%):** Calculating output debit/credit sums...")
-        out_debit_sum = sum(b['_debit'].sum() if not b.empty and '_debit' in b.columns else 0
-                           for b in [batch1_df, batch2_df, batch3_df, batch4_df, batch5_df, batch6_df])
-        out_credit_sum = sum(b['_credit'].sum() if not b.empty and '_credit' in b.columns else 0
-                            for b in [batch1_df, batch2_df, batch3_df, batch4_df, batch5_df, batch6_df])
-        progress_bar.progress(0.97)
-
-        # Check for issues
-        status_placeholder.info("✅ **Step 6/7 (98.0%):** Running integrity checks...")
-        has_duplicates = total_output != original_row_count
-        sum_mismatch = abs(orig_debit_sum - out_debit_sum) > 0.01 or abs(orig_credit_sum - out_credit_sum) > 0.01
-        progress_bar.progress(0.98)
-
-        elapsed_time = time.time() - start_time
-
-        # Prepare results
-        status_placeholder.info("🎉 **Step 7/7 (99.0%):** Preparing final results...")
-        results = {
-            'batch1': batch1_df, 'batch2': batch2_df, 'batch3': batch3_df,
-            'batch4': batch4_df, 'batch5': batch5_df, 'batch6': batch6_df,
-            'stats': {
-                'total': original_row_count,
-                'batch1': len(batch1_df), 'batch2': len(batch2_df), 'batch3': len(batch3_df),
-                'batch4': len(batch4_df), 'batch5': len(batch5_df), 'batch6': len(batch6_df),
-                'processing_time': elapsed_time,
-                'original_rows': original_row_count, 'output_rows': total_output,
-                'original_debit_sum': orig_debit_sum, 'original_credit_sum': orig_credit_sum,
-                'output_debit_sum': out_debit_sum, 'output_credit_sum': out_credit_sum,
-                'has_duplicates': has_duplicates, 'sum_mismatch': sum_mismatch
+            # Prepare results
+            status_placeholder.info("🎉 **Step 7/7 (99.0%):** Preparing final results...")
+            results = {
+                'batch1': batch1_df, 'batch2': batch2_df, 'batch3': batch3_df,
+                'batch4': batch4_df, 'batch5': batch5_df, 'batch6': batch6_df,
+                'stats': {
+                    'total': original_row_count,
+                    'batch1': len(batch1_df), 'batch2': len(batch2_df), 'batch3': len(batch3_df),
+                    'batch4': len(batch4_df), 'batch5': len(batch5_df), 'batch6': len(batch6_df),
+                    'processing_time': elapsed_time,
+                    'original_rows': original_row_count, 'output_rows': total_output,
+                    'original_debit_sum': orig_debit_sum, 'original_credit_sum': orig_credit_sum,
+                    'output_debit_sum': out_debit_sum, 'output_credit_sum': out_credit_sum,
+                    'has_duplicates': has_duplicates, 'sum_mismatch': sum_mismatch
+                }
             }
-        }
-        progress_bar.progress(0.99)
+            progress_bar.progress(0.99)
 
-        # Save to session state
-        status_placeholder.info("🎉 **Step 7/7 (100.0%):** Finalizing and saving results...")
-        st.session_state.corporate_results = results
-        progress_bar.progress(1.0)
+            # Save to session state
+            status_placeholder.info("🎉 **Step 7/7 (100.0%):** Finalizing and saving results...")
+            st.session_state.corporate_results = results
+            progress_bar.progress(1.0)
 
-        # Show completion message briefly
-        status_placeholder.success("✅ **COMPLETE!** All batches processed successfully!")
-        time.sleep(0.5)  # Brief pause to show completion
+            # Show completion message briefly
+            status_placeholder.success("✅ **COMPLETE!** All batches processed successfully!")
+            time.sleep(0.5)  # Brief pause to show completion
 
-        # Clear progress indicators
-        status_placeholder.empty()
-        progress_placeholder.empty()
-        metrics_placeholder.empty()
+            # Clear progress indicators
+            status_placeholder.empty()
+            progress_placeholder.empty()
+            metrics_placeholder.empty()
 
-        # Display completion
-        rows_per_sec = original_row_count / elapsed_time if elapsed_time > 0 else 0
-        match_rate = (len(matched) / original_row_count * 100) if original_row_count > 0 else 0
+            # Display completion
+            rows_per_sec = original_row_count / elapsed_time if elapsed_time > 0 else 0
+            match_rate = (len(matched) / original_row_count * 100) if original_row_count > 0 else 0
 
-        if has_duplicates or sum_mismatch:
-            st.error(f"""
-            ## ⚠️ Reconciliation Complete with Warnings!
-            {"⚠️ Row count mismatch!" if has_duplicates else ""}
-            {"⚠️ Sum mismatch detected!" if sum_mismatch else ""}
-            """)
+            if has_duplicates or sum_mismatch:
+                st.error(f"""
+                ## ⚠️ Reconciliation Complete with Warnings!
+                {"⚠️ Row count mismatch!" if has_duplicates else ""}
+                {"⚠️ Sum mismatch detected!" if sum_mismatch else ""}
+                """)
 
-        st.success(f"""
-        ## 🎉 ULTRA-FAST Reconciliation Complete! ⚡
+                st.success(f"""
+                ## 🎉 ULTRA-FAST Reconciliation Complete! ⚡
 
-        **⚡ Performance (BLAZING FAST):**
-        - 🚀 **Speed**: {rows_per_sec:,.0f} rows/second
-        - ⏱️ **Total Time**: {elapsed_time:.2f}s
-        - 📊 **Processed**: {original_row_count:,} transactions
-        - ✅ **Matched**: {len(matched):,} ({match_rate:.1f}%)
-        - ❌ **Unmatched**: {len(batch6_indices):,} ({100-match_rate:.1f}%)
+                **⚡ Performance (BLAZING FAST):**
+                - 🚀 **Speed**: {rows_per_sec:,.0f} rows/second
+                - ⏱️ **Total Time**: {elapsed_time:.2f}s
+                - 📊 **Processed**: {original_row_count:,} transactions
+                - ✅ **Matched**: {len(matched):,} ({match_rate:.1f}%)
+                - ❌ **Unmatched**: {len(batch6_idx_set):,} ({100-match_rate:.1f}%)
 
-        **📊 Batch Summary:**
-        - Batch 1: {len(batch1_df):,} | Batch 2: {len(batch2_df):,} | Batch 3: {len(batch3_df):,}
-        - Batch 4: {len(batch4_df):,} | Batch 5: {len(batch5_df):,} | Batch 6: {len(batch6_df):,}
+                **📊 Batch Summary:**
+                - Batch 1: {len(batch1_df):,} | Batch 2: {len(batch2_df):,} | Batch 3: {len(batch3_df):,}
+                - Batch 4: {len(batch4_df):,} | Batch 5: {len(batch5_df):,} | Batch 6: {len(batch6_df):,}
 
-        **✅ Data Integrity:**
-        - Rows: {original_row_count:,} in = {total_output:,} out
-        - FD Sum: {orig_debit_sum:,.2f} in = {out_debit_sum:,.2f} out
-        - FC Sum: {orig_credit_sum:,.2f} in = {out_credit_sum:,.2f} out
-        """)
+                **✅ Data Integrity:**
+                - Rows: {original_row_count:,} in = {total_output:,} out
+                - FD Sum: {orig_debit_sum:,.2f} in = {out_debit_sum:,.2f} out
+                - FC Sum: {orig_credit_sum:,.2f} in = {out_credit_sum:,.2f} out
+                """)
 
             st.rerun()
             
@@ -783,8 +802,9 @@ class CorporateWorkflow:
         if len(remaining_text) > 0:
             # Extract all patterns using vectorized str.findall
             # Pattern matches RJ, TX, CSH, ZVC, ECO, INN references (case-insensitive)
-            pattern = r'(?:RJ\d{11}|TX\d{11}|CSH\d{9,}|ZVC\d{9}|ECO\d{9}|INN\d{9}|(?<!R)(?<!T)J\d{5})'
-            
+            # IMPROVED: Added word boundaries and flexible digit counts for ZVC/ECO/INN
+            pattern = r'(?<![A-Za-z])(?:RJ\d{11}|TX\d{11}|CSH\d{9,}|ZVC\d{9,}|ECO\d{9,}|INN\d{9,}|(?<!R)(?<!T)J\d{5})(?!\d)'
+
             # Extract all matches per row
             extracted = remaining_text.str.findall(pattern, flags=re.IGNORECASE)
             
