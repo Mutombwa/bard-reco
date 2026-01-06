@@ -254,6 +254,10 @@ def show_login_page():
 def show_main_app():
     """Display main application interface"""
 
+    # Initialize navigation state
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = 'Dashboard'
+
     # Sidebar
     with st.sidebar:
         st.markdown(f"""
@@ -274,9 +278,23 @@ def show_main_app():
         except Exception as e:
             # Fallback if get_backend_info() not available
             st.info("ℹ️ Authentication active")
-        
+
         st.markdown("---")
-        
+
+        # Navigation Menu
+        st.markdown("### 📍 Navigation")
+        nav_options = {
+            "📊 Dashboard": "Dashboard",
+            "🔄 All Workflows": "Workflows"
+        }
+
+        for label, page in nav_options.items():
+            if st.button(label, use_container_width=True, type="primary" if st.session_state.current_page == page else "secondary"):
+                st.session_state.current_page = page
+                st.rerun()
+
+        st.markdown("---")
+
         # Logout button
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.session.logout()
@@ -284,9 +302,19 @@ def show_main_app():
 
     # Load persistent data after authentication (lazy loading)
     load_persistent_data()
-    
-    # Show workflows page directly
-    show_workflows_page()
+
+    # Show selected page
+    if st.session_state.current_page == 'Dashboard':
+        show_dashboard_page()
+    else:
+        show_workflows_page()
+
+
+def show_dashboard_page():
+    """Display the Dashboard"""
+    from components.dashboard import Dashboard
+
+    Dashboard().render()
 
 def show_workflows_page():
     """Specialized workflows page - Display all workflows"""
