@@ -613,13 +613,25 @@ class FNBWorkflow:
                 if not isinstance(comment, str):
                     return '', ''
 
-                # RJ-Number: look for RJ, TX, CSH, ZVC, ECO, INN followed by digits
+                # RJ-Number: look for RJ, TX, CSH, ZVC, ECO, INN, EFT, IFX followed by digits
                 # Patterns: RJ123456, TX123456, CSH764074250, ZVC128809565, ECO904183634, INN757797206
                 # Also handles: Reversal: (#Ref CSH767209773)
-                rj_match = re.search(r'(RJ|TX|CSH|ZVC|ECO|INN)[-]?(\d{6,})', comment, re.IGNORECASE)
+                # NEW: Out: EFT217069916: EFT217069916, EXch-Sell-IFX20120260 - Senwes
+                rj_match = re.search(r'(RJ|TX|CSH|ZVC|ECO|INN|EFT|IFX)[-]?(\d{6,})', comment, re.IGNORECASE)
                 rj = rj_match.group(0).replace('-', '').replace('#', '').upper() if rj_match else ''
 
                 payref = ''
+                
+                # Pattern 0: SA PAYOUT pattern - extract name before "SA PAYOUT"
+                # Handles: "BONGANI MPOFU SA PAYOUT @17.30 $1445", "LEONARD NGIRAZI SA PAYOUT $5276"
+                sa_payout_match = re.search(r'^([A-Z][A-Z\s]+?)\s+SA\s+PAYOUT', comment, re.IGNORECASE)
+                if sa_payout_match:
+                    payref = sa_payout_match.group(1).strip()
+                    # If no RJ number found from standard patterns, use the name as RJ
+                    if not rj:
+                        rj = payref
+                    return rj, payref
+                
                 # Pattern 1: Explicit "Payment Ref #:" label
                 payref_match = re.search(r'Payment\s+Ref\s*[#:]+\s*([\w\s\-\.,&]+)', comment, re.IGNORECASE)
                 if payref_match:
@@ -630,9 +642,17 @@ class FNBWorkflow:
                     paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
                     paren_content = paren_match.group(1).strip()
                     # Only use if it doesn't look like a reference (doesn't start with #Ref or Ref)
-                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
+                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN|EFT|IFX)', paren_content, re.IGNORECASE):
                         payref = paren_content
-                # Pattern 3: After RJ/TX/CSH number
+                # Pattern 3: EXch-Sell/EXch-Buy pattern - extract name after dash
+                # Handles: "EXch-Sell-IFX20120260 - Senwes"
+                elif re.search(r'EXch-(?:Sell|Buy)-[A-Z]+\d+\s*-\s*(\w+)', comment, re.IGNORECASE):
+                    exch_match = re.search(r'EXch-(?:Sell|Buy)-[A-Z]+\d+\s*-\s*(\w+)', comment, re.IGNORECASE)
+                    payref = exch_match.group(1).strip()
+                    # Also use the name as RJ if needed
+                    if not rj:
+                        rj = payref
+                # Pattern 4: After RJ/TX/CSH/EFT/IFX number
                 elif rj_match:
                     after = comment[rj_match.end():]
                     after = after.lstrip(' .:-#')
