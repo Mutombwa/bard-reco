@@ -341,6 +341,9 @@ class KazangWorkflow:
                 - "Ref #RJ58953541109. - Lucy6410281493" → "Lucy"
                 - "Ref CSH764074250 - (Phuthani mabhena)" → "Phuthani mabhena"
                 - "Ref CSH293299862 - (Mlamuli)" → "Mlamuli"
+                - "Ref CSH098159683 - (Den 6468376638)" → "Den"
+                - "Ref CSH800876750 - (Sam 646833036)" → "Sam"
+                - "Ref CSH027647751 - (thie/6468747511)" → "thie"
                 - "In: CSH666722052: Thandi 6456043502" → "Thandi"
                 - "In: CSH815211956: Lillian6456036044" → "Lillian"
                 - "In: INN217901612: Mbeke 6457254616" → "Mbeke"
@@ -354,12 +357,21 @@ class KazangWorkflow:
 
                 # Pattern 1: Parentheses format - "Ref CSH764074250 - (Phuthani mabhena)"
                 # But not if it's just the reference itself like "Reversal: (#Ref CSH767209773)"
+                # Extract only the NAME part (letters), not phone numbers
                 paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
                 if paren_match:
                     paren_content = paren_match.group(1).strip()
                     # Only use if it doesn't look like a reference
                     if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
-                        return paren_content
+                        # Extract just the name portion from parentheses content
+                        # Handles: "Den 6468376638" → "Den", "thie/6468747511" → "thie", "Phuthani mabhena" → "Phuthani mabhena"
+                        # Pattern: Extract letters (with spaces) at start, stop at numbers or slash
+                        name_match = re.match(r'^([A-Za-z]+(?:\s+[A-Za-z]+)*)', paren_content)
+                        if name_match:
+                            return name_match.group(1).strip()
+                        # Fallback: if entire content is letters/spaces only, return it
+                        if re.match(r'^[A-Za-z\s]+$', paren_content):
+                            return paren_content
 
                 # Pattern 2: Look for "- " followed by name (with dot before)
                 # Match: ". - Name" where Name is letters (possibly with numbers attached)
