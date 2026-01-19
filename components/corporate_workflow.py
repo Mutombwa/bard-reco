@@ -802,7 +802,7 @@ class CorporateWorkflow:
             return
 
         df = st.session_state.corporate_df.copy()
-        comment_columns = [col for col in df.columns if 'comment' in col.lower()]
+        comment_columns = [col for col in df.columns if isinstance(col, str) and 'comment' in col.lower()]
 
         if not comment_columns:
             st.error("❌ No Comment column found")
@@ -859,7 +859,7 @@ class CorporateWorkflow:
             rate = (refs_found / len(df) * 100) if len(df) > 0 else 0
             st.metric("Extraction Rate", f"{rate:.1f}%")
 
-        cols = ['Reference'] + [col for col in df.columns if col != 'Reference']
+        cols = ['Reference'] + [col for col in df.columns if str(col) != 'Reference']
         st.dataframe(df[cols], use_container_width=True, height=400)
 
         if st.button("🔼 Hide Data View"):
@@ -948,17 +948,17 @@ class CorporateWorkflow:
         with col7:
             st.metric("Batch 6", f"{stats['batch6']:,}")
 
-        # Display batches
-        st.markdown("---")
-        for batch_key, batch_title in batch_configs:
-            st.markdown(f'<p style="font-family: Calibri; font-size: 18px; font-weight: bold;">{batch_title}</p>', unsafe_allow_html=True)
-            batch_df = results[batch_key]
-            if not batch_df.empty:
-                display_df = batch_df.drop(columns=[c for c in batch_df.columns if isinstance(c, str) and c.startswith('_')], errors='ignore')
-                st.dataframe(display_df, use_container_width=True, height=400)
-                st.info(f"✅ {len(batch_df):,} transactions")
-            else:
-                st.info("No transactions in this batch")
+        # Expandable batch details (collapsed by default to reduce clutter)
+        with st.expander("📋 View Batch Details", expanded=False):
+            for batch_key, batch_title in batch_configs:
+                batch_df = results[batch_key]
+                st.markdown(f"**{batch_title}** - {len(batch_df):,} transactions")
+                if not batch_df.empty:
+                    display_df = batch_df.drop(columns=[c for c in batch_df.columns if isinstance(c, str) and c.startswith('_')], errors='ignore')
+                    st.dataframe(display_df, use_container_width=True, height=200)
+                else:
+                    st.caption("No transactions in this batch")
+                st.markdown("---")
 
         # Save to Database section
         st.markdown("---")
