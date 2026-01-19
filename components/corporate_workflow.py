@@ -899,7 +899,7 @@ class CorporateWorkflow:
             for batch_key, batch_title in batch_configs:
                 batch_df = results[batch_key]
                 if not batch_df.empty:
-                    display_df = batch_df.drop(columns=[c for c in batch_df.columns if c.startswith('_')], errors='ignore')
+                    display_df = batch_df.drop(columns=[c for c in batch_df.columns if isinstance(c, str) and c.startswith('_')], errors='ignore')
                     header_dict = {col: [batch_title if col == display_df.columns[0] else ''] for col in display_df.columns}
                     header_row = pd.DataFrame(header_dict)
                     empty_row = pd.DataFrame({col: [''] for col in display_df.columns})
@@ -954,7 +954,7 @@ class CorporateWorkflow:
             st.markdown(f'<p style="font-family: Calibri; font-size: 18px; font-weight: bold;">{batch_title}</p>', unsafe_allow_html=True)
             batch_df = results[batch_key]
             if not batch_df.empty:
-                display_df = batch_df.drop(columns=[c for c in batch_df.columns if c.startswith('_')], errors='ignore')
+                display_df = batch_df.drop(columns=[c for c in batch_df.columns if isinstance(c, str) and c.startswith('_')], errors='ignore')
                 st.dataframe(display_df, use_container_width=True, height=400)
                 st.info(f"✅ {len(batch_df):,} transactions")
             else:
