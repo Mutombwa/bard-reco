@@ -84,17 +84,15 @@ class CorporateWorkflow:
 
     # Pre-compiled regex patterns for MAXIMUM extraction speed (compiled once, used many times)
     # All patterns are CASE-INSENSITIVE to handle rj/RJ, csh/CSH, etc.
-    # IMPROVED: Added word boundaries (\b) to prevent extracting from within other words
-    # IMPROVED: Made ZVC, ECO, INN flexible (9+ digits) like CSH
     _REFERENCE_PATTERN = re.compile(
         r'''
-        (?<![A-Za-z])(?P<rj>RJ\d{11})(?!\d)       |  # RJ patterns: RJ + 11 digits (e.g., RJ59159065012, rj58044672280)
-        (?<![A-Za-z])(?P<tx>TX\d{11})(?!\d)       |  # TX patterns: TX + 11 digits
-        (?<![A-Za-z])(?P<csh>CSH\d{9,})(?!\d)     |  # CSH patterns: CSH + 9+ digits (e.g., CSH710230082, CSH021131898)
-        (?<![A-Za-z])(?P<zvc>ZVC\d{9,})(?!\d)     |  # ZVC patterns: ZVC + 9+ digits (e.g., ZVC083448501, ZVC1234567890)
-        (?<![A-Za-z])(?P<eco>ECO\d{9,})(?!\d)     |  # ECO patterns: ECO + 9+ digits
-        (?<![A-Za-z])(?P<inn>INN\d{9,})(?!\d)     |  # INN patterns: INN + 9+ digits
-        (?<![A-Za-z])(?<!R)(?<!T)(?P<journal>J\d{5})(?!\d)  # Journal entries: J + 5 digits (not preceded by R, T, or letter)
+        (?P<rj>RJ\d{11})           |  # RJ patterns: RJ + 11 digits (e.g., RJ59159065012, rj58044672280)
+        (?P<tx>TX\d{11})           |  # TX patterns: TX + 11 digits
+        (?P<csh>CSH\d{9,})         |  # CSH patterns: CSH + 9+ digits (e.g., CSH710230082, CSH021131898)
+        (?P<zvc>ZVC\d{9})          |  # ZVC patterns: ZVC + 9 digits (e.g., ZVC083448501)
+        (?P<eco>ECO\d{9})          |  # ECO patterns: ECO + 9 digits
+        (?P<inn>INN\d{9})          |  # INN patterns: INN + 9 digits
+        (?P<journal>(?<!R)(?<!T)J\d{5})  # Journal entries: J + 5 digits (not preceded by R or T)
         ''',
         re.IGNORECASE | re.VERBOSE
     )
@@ -105,30 +103,21 @@ class CorporateWorkflow:
     def extract_references(comment_text):
         """
         Extract RJ, TX, CSH, ZVC, ECO, INN reference numbers from comment text.
-
+        
         OPTIMIZED VERSION:
         - Pre-compiled regex (compiled once at class level)
         - Single regex pass instead of 7 separate calls
         - Case-insensitive matching (handles rj/RJ, csh/CSH, etc.)
         - Normalizes output to UPPERCASE for consistent matching
-        - Word boundary protection (won't extract from XCSH123... or ABRJ123...)
-
-        Supported patterns (with word boundaries):
+        
+        Supported patterns:
         - RJ + 11 digits: RJ59159065012, rj58044672280
         - TX + 11 digits: TX12345678901
         - CSH + 9+ digits: CSH710230082, CSH021131898, CSH632914678
-        - ZVC + 9+ digits: ZVC083448501, ZVC1234567890
-        - ECO + 9+ digits: ECO123456789, ECO1234567890
-        - INN + 9+ digits: INN123456789, INN1234567890
-        - J + 5 digits: J12345 (not preceded by R, T, or any letter)
-
-        Formats handled:
-        - Out: CSH710230082: Arom
-        - In: CSH021131898: Langelihle Dube
-        - Tilltrade Xchange: rj58044672280
-        - Reversal: CSH457317440: Macebo
-        - Ref RJ59159065012 Payment ref Diepsloot
-        - In: ZVC083448501: Nkosi Julius nkomo
+        - ZVC + 9 digits: ZVC083448501
+        - ECO + 9 digits: ECO123456789
+        - INN + 9 digits: INN123456789
+        - J + 5 digits: J12345 (not preceded by R or T)
         """
         if pd.isna(comment_text) or not isinstance(comment_text, str):
             return ""
@@ -247,7 +236,7 @@ class CorporateWorkflow:
             if st.session_state.corporate_df is not None:
                 with st.expander("👁️ Preview Data"):
                     preview_df = st.session_state.corporate_df
-                    st.info(f"Current columns: {', '.join(preview_df.columns.tolist())}")
+                    st.info(f"Current columns: {', '.join(str(col) for col in preview_df.columns.tolist())}")
                     st.dataframe(preview_df.head(20), use_container_width=True)
 
                 st.markdown("---")
@@ -394,14 +383,12 @@ class CorporateWorkflow:
             metrics_placeholder.success(f"✅ Step 2 complete: {step2_time-step1_time:.3f}s | {unique_refs:,} unique refs | {unique_journals:,} journals indexed")
 
             # Initialize tracking
-            # OPTIMIZATION: Store indices instead of row data - much faster
-            # DataFrame creation from indices at end is more efficient
             matched = set()
-            batch1_indices = []
-            batch2_indices = []
-            batch3_indices = []
-            batch4_indices = []
-            batch5_indices = []
+            batch1_rows = []
+            batch2_rows = []
+            batch3_rows = []
+            batch4_rows = []
+            batch5_rows = []
 
             # =============================================================================
             # BATCH 1: CORRECTING JOURNALS (Ultra-fast vectorized matching)
@@ -440,28 +427,24 @@ class CorporateWorkflow:
                         journal_lookup[j_normalized].append(idx)
             
                 # Match each correcting journal
-                # OPTIMIZATION: Use itertuples() instead of iterrows() - 10x faster
-                for corr_row in valid_correcting.itertuples():
-                    idx = corr_row.Index
+                for idx, corr_row in valid_correcting.iterrows():
                     if idx in matched:
                         continue
-
+                
                     # Extract journal number from correcting reference
-                    journal_num = corr_row._journal_num
-                    if pd.isna(journal_num):
-                        continue
-                    journal_normalized = str(journal_num).lstrip('0') or '0'
-
+                    journal_num = corr_row['_journal_num']
+                    journal_normalized = journal_num.lstrip('0') or '0'
+                
                     # Look up matching journals using hash map (O(1))
                     if journal_normalized in journal_lookup:
                         potential_indices = journal_lookup[journal_normalized]
-
+                    
                         # Find first unmatched transaction with this journal (excluding self)
                         for match_idx in potential_indices:
                             if match_idx != idx and match_idx not in matched:
-                                # OPTIMIZATION: Store indices, not row data
-                                batch1_indices.append(match_idx)
-                                batch1_indices.append(idx)
+                                # Add as paired rows (matched transaction FIRST, then correcting)
+                                batch1_rows.append(df.loc[match_idx])
+                                batch1_rows.append(df.loc[idx])
                                 matched.add(idx)
                                 matched.add(match_idx)
                                 # Remove from lookup to prevent reuse
@@ -473,8 +456,8 @@ class CorporateWorkflow:
 
             progress_bar.progress(0.30)
             step3_time = time.time() - start_time
-            batch1_pairs = len(batch1_indices) // 2 if len(batch1_indices) > 0 else 0
-            metrics_placeholder.success(f"✅ Batch 1 complete: {step3_time-step2_time:.3f}s | {len(batch1_indices):,} transactions in {batch1_pairs:,} pairs ({total_correcting:,} correcting entries found)")
+            batch1_pairs = len(batch1_rows) // 2 if len(batch1_rows) > 0 else 0
+            metrics_placeholder.success(f"✅ Batch 1 complete: {step3_time-step2_time:.3f}s | {len(batch1_rows):,} transactions in {batch1_pairs:,} pairs ({total_correcting:,} correcting entries found)")
 
             # =============================================================================
             # BATCH 2-5: VECTORIZED MATCHING WITH HASH LOOKUP
@@ -535,9 +518,8 @@ class CorporateWorkflow:
                     if np.any(exact_mask):
                         j = np.argmax(exact_mask)  # Get first True index
                         c_idx = credit_idx[j]
-                        # OPTIMIZATION: Store indices, not row data
-                        batch2_indices.append(d_idx)
-                        batch2_indices.append(c_idx)
+                        batch2_rows.append(df.loc[d_idx])
+                        batch2_rows.append(df.loc[c_idx])
                         matched.add(d_idx)
                         matched.add(c_idx)
                         credit_available[j] = False
@@ -548,8 +530,8 @@ class CorporateWorkflow:
                     if np.any(fd_mask):
                         j = np.argmax(fd_mask)
                         c_idx = credit_idx[j]
-                        batch3_indices.append(d_idx)
-                        batch3_indices.append(c_idx)
+                        batch3_rows.append(df.loc[d_idx])
+                        batch3_rows.append(df.loc[c_idx])
                         matched.add(d_idx)
                         matched.add(c_idx)
                         credit_available[j] = False
@@ -560,8 +542,8 @@ class CorporateWorkflow:
                     if np.any(fc_mask):
                         j = np.argmax(fc_mask)
                         c_idx = credit_idx[j]
-                        batch4_indices.append(d_idx)
-                        batch4_indices.append(c_idx)
+                        batch4_rows.append(df.loc[d_idx])
+                        batch4_rows.append(df.loc[c_idx])
                         matched.add(d_idx)
                         matched.add(c_idx)
                         credit_available[j] = False
@@ -572,8 +554,8 @@ class CorporateWorkflow:
                     if np.any(rate_mask):
                         j = np.argmax(rate_mask)
                         c_idx = credit_idx[j]
-                        batch5_indices.append(d_idx)
-                        batch5_indices.append(c_idx)
+                        batch5_rows.append(df.loc[d_idx])
+                        batch5_rows.append(df.loc[c_idx])
                         matched.add(d_idx)
                         matched.add(c_idx)
                         credit_available[j] = False
@@ -586,49 +568,48 @@ class CorporateWorkflow:
                 if processed_groups % update_freq == 0 or processed_groups == total_ref_groups:
                     current_progress = 0.30 + (processed_groups / total_ref_groups) * 0.50  # 30% to 80%
                     progress_pct = current_progress * 100
-                    total_matched = len(batch2_indices) + len(batch3_indices) + len(batch4_indices) + len(batch5_indices)
+                    total_matched = len(batch2_rows) + len(batch3_rows) + len(batch4_rows) + len(batch5_rows)
 
                     status_placeholder.info(
                         f"⚡ **Step 4/7 ({progress_pct:.1f}%):** {processed_groups:,} / {total_ref_groups:,} groups | "
-                        f"Matched: {total_matched:,} (B2:{len(batch2_indices)//2}, B3:{len(batch3_indices)//2}, B4:{len(batch4_indices)//2}, B5:{len(batch5_indices)//2})"
+                        f"Matched: {total_matched:,} (B2:{len(batch2_rows)//2}, B3:{len(batch3_rows)//2}, B4:{len(batch4_rows)//2}, B5:{len(batch5_rows)//2})"
                     )
                     progress_bar.progress(current_progress)
 
             progress_bar.progress(0.80)
             step4_time = time.time() - start_time
-            total_matched_2_5 = len(batch2_indices) + len(batch3_indices) + len(batch4_indices) + len(batch5_indices)
+            total_matched_2_5 = len(batch2_rows) + len(batch3_rows) + len(batch4_rows) + len(batch5_rows)
             metrics_placeholder.success(f"✅ Batches 2-5 complete: {step4_time-step3_time:.3f}s | {total_matched_2_5:,} transactions | {processed_groups:,} ref groups processed")
 
             # =============================================================================
             # BATCH 6: UNMATCHED
             # =============================================================================
             status_placeholder.info("📊 **Step 5/7 (80.0%):** Batch 6 - Collecting unmatched transactions...")
-            batch6_idx_set = set(df.index) - matched
+            batch6_indices = set(df.index) - matched
 
-            # OPTIMIZATION: Create DataFrames from indices using .loc[] with list
-            # This is much faster than creating DataFrame from list of Series
+            # Create batch DataFrames with progress updates
             status_placeholder.info("📊 **Step 5/7 (82.0%):** Creating Batch 1 DataFrame (Correcting Journals)...")
-            batch1_df = df.loc[batch1_indices].copy() if batch1_indices else pd.DataFrame()
+            batch1_df = pd.DataFrame(batch1_rows) if batch1_rows else pd.DataFrame()
             progress_bar.progress(0.82)
 
             status_placeholder.info("📊 **Step 5/7 (84.0%):** Creating Batch 2 DataFrame (Exact Matches)...")
-            batch2_df = df.loc[batch2_indices].copy() if batch2_indices else pd.DataFrame()
+            batch2_df = pd.DataFrame(batch2_rows) if batch2_rows else pd.DataFrame()
             progress_bar.progress(0.84)
 
             status_placeholder.info("📊 **Step 5/7 (86.0%):** Creating Batch 3 DataFrame (FD Commission)...")
-            batch3_df = df.loc[batch3_indices].copy() if batch3_indices else pd.DataFrame()
+            batch3_df = pd.DataFrame(batch3_rows) if batch3_rows else pd.DataFrame()
             progress_bar.progress(0.86)
 
             status_placeholder.info("📊 **Step 5/7 (88.0%):** Creating Batch 4 DataFrame (FC Commission)...")
-            batch4_df = df.loc[batch4_indices].copy() if batch4_indices else pd.DataFrame()
+            batch4_df = pd.DataFrame(batch4_rows) if batch4_rows else pd.DataFrame()
             progress_bar.progress(0.88)
 
             status_placeholder.info("📊 **Step 5/7 (90.0%):** Creating Batch 5 DataFrame (Rate Differences)...")
-            batch5_df = df.loc[batch5_indices].copy() if batch5_indices else pd.DataFrame()
+            batch5_df = pd.DataFrame(batch5_rows) if batch5_rows else pd.DataFrame()
             progress_bar.progress(0.90)
 
-            status_placeholder.info(f"📊 **Step 5/7 (92.0%):** Creating Batch 6 DataFrame ({len(batch6_idx_set):,} Unmatched)...")
-            batch6_df = df.loc[list(batch6_idx_set)].copy() if batch6_idx_set else pd.DataFrame()
+            status_placeholder.info(f"📊 **Step 5/7 (92.0%):** Creating Batch 6 DataFrame ({len(batch6_indices):,} Unmatched)...")
+            batch6_df = df.loc[list(batch6_indices)].copy() if batch6_indices else pd.DataFrame()
             progress_bar.progress(0.92)
 
             # =============================================================================
@@ -714,7 +695,7 @@ class CorporateWorkflow:
                 - ⏱️ **Total Time**: {elapsed_time:.2f}s
                 - 📊 **Processed**: {original_row_count:,} transactions
                 - ✅ **Matched**: {len(matched):,} ({match_rate:.1f}%)
-                - ❌ **Unmatched**: {len(batch6_idx_set):,} ({100-match_rate:.1f}%)
+                - ❌ **Unmatched**: {len(batch6_indices):,} ({100-match_rate:.1f}%)
 
                 **📊 Batch Summary:**
                 - Batch 1: {len(batch1_df):,} | Batch 2: {len(batch2_df):,} | Batch 3: {len(batch3_df):,}
@@ -802,9 +783,8 @@ class CorporateWorkflow:
         if len(remaining_text) > 0:
             # Extract all patterns using vectorized str.findall
             # Pattern matches RJ, TX, CSH, ZVC, ECO, INN references (case-insensitive)
-            # IMPROVED: Added word boundaries and flexible digit counts for ZVC/ECO/INN
-            pattern = r'(?<![A-Za-z])(?:RJ\d{11}|TX\d{11}|CSH\d{9,}|ZVC\d{9,}|ECO\d{9,}|INN\d{9,}|(?<!R)(?<!T)J\d{5})(?!\d)'
-
+            pattern = r'(?:RJ\d{11}|TX\d{11}|CSH\d{9,}|ZVC\d{9}|ECO\d{9}|INN\d{9}|(?<!R)(?<!T)J\d{5})'
+            
             # Extract all matches per row
             extracted = remaining_text.str.findall(pattern, flags=re.IGNORECASE)
             
