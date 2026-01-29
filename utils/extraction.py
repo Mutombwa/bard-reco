@@ -131,32 +131,45 @@ class ReferenceExtractor:
     @classmethod
     def extract_payment_ref(cls, text: str) -> str:
         """
-        Extract payment reference (name) from text.
+        Extract payment reference (name or phone number) from text.
 
         Args:
             text: Input text containing payment reference
 
         Returns:
-            Extracted and cleaned payment reference name
+            Extracted payment reference (name or phone number)
 
         Examples:
             >>> ReferenceExtractor.extract_payment_ref("Ref CSH891089488 - (Jenet 6452843846)")
             'Jenet'
             >>> ReferenceExtractor.extract_payment_ref("Reversal: (#Ref CSH613695391) - (Doubt Sibanda)")
             'Doubt Sibanda'
+            >>> ReferenceExtractor.extract_payment_ref("Ref CSH667941330 - (6503065718)")
+            '6503065718'
+            >>> ReferenceExtractor.extract_payment_ref("Reversal: CSH564980448: 6505166670")
+            '6505166670'
         """
         if not text or not isinstance(text, str):
             return ''
 
         text = text.strip()
 
-        # Pattern 1: Find ALL parentheses and use the one with the name (not #Ref)
+        # Pattern 0: Reversal with colon format - "Reversal: CSH564980448: 6505166670"
+        # Extract phone number after the second colon
+        match = re.search(r'Reversal:\s*(CSH|ECO|ZVC|INN|RJ|TX)\d+:\s*(\d{10})', text, re.IGNORECASE)
+        if match:
+            return match.group(2)
+
+        # Pattern 1: Find ALL parentheses and use the one with the name/phone (not #Ref)
         all_parens = re.findall(r'\(\s*([^)]+)\s*\)', text)
         for paren_content in all_parens:
             paren_content = paren_content.strip()
             # Skip if it looks like a reference (starts with #Ref or Ref followed by pattern)
             if re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
                 continue
+            # Check if it's a phone number only (10 digits starting with 6)
+            if re.match(r'^6\d{9}$', paren_content):
+                return paren_content
             # Found a valid name in parentheses
             cleaned = cls.clean_name(paren_content)
             if cleaned:
@@ -308,6 +321,10 @@ if __name__ == "__main__":
         ("Ref ECO904183634", "ECO904183634", ""),
         ("Ref INN757797206 - (Themba)", "INN757797206", "Themba"),
         ("RJ58822828410 - Gugu", "RJ58822828410", "Gugu"),
+        # New patterns: phone numbers as payment refs
+        ("Ref CSH667941330 - (6503065718)", "CSH667941330", "6503065718"),
+        ("Reversal: CSH564980448: 6505166670", "CSH564980448", "6505166670"),
+        ("Ref ECO149260320 - (6507067253)", "ECO149260320", "6507067253"),
     ]
 
     print("=" * 70)
