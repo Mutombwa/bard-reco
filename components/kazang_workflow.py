@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from data_cleaner import clean_amount_column  # type: ignore
 from column_selector import ColumnSelector  # type: ignore
 from file_loader import load_uploaded_file, get_dataframe_info  # type: ignore
+from extraction import ReferenceExtractor  # type: ignore
 
 
 class KazangWorkflow:
@@ -295,13 +296,13 @@ class KazangWorkflow:
 
     def extract_kazang_payment_ref(self):
         """
-        Extract Payment Ref from Kazang Ledger Comment column
-        
-        Format Examples:
-        - "Ref #RJ58822828410. - Gugu 6408370691" → Payment Ref = "Gugu"
-        - "Ref #RJ58953541109. - Lucy6410281493" → Payment Ref = "Lucy"
-        
-        Pattern: After "- " extract the name (letters only, before any numbers)
+        Extract Payment Ref from Kazang Ledger Comment column using unified ReferenceExtractor.
+
+        Supports all formats including:
+        - "Ref CSH667941330 - (6503065718)" → Payment Ref = "6503065718" (phone number)
+        - "Reversal: CSH564980448: 6505166670" → Payment Ref = "6505166670" (phone number)
+        - "Ref #RJ58822828410. - Gugu 6408370691" → Payment Ref = "Gugu" (name)
+        - "Ref CSH764074250 - (Phuthani mabhena)" → Payment Ref = "Phuthani mabhena" (name)
         """
         try:
             if st.session_state.kazang_ledger is None:
@@ -332,94 +333,14 @@ class KazangWorkflow:
                 st.info("ℹ️ Payment Ref column already exists in ledger")
                 return
 
-            def extract_payment_ref_from_comment(comment):
-                """
-                Extract Payment Ref from Kazang comment format
-
-                Examples:
-                - "Ref #RJ58822828410. - Gugu 6408370691" → "Gugu"
-                - "Ref #RJ58953541109. - Lucy6410281493" → "Lucy"
-                - "Ref CSH764074250 - (Phuthani mabhena)" → "Phuthani mabhena"
-                - "Ref CSH293299862 - (Mlamuli)" → "Mlamuli"
-                - "Ref CSH098159683 - (Den 6468376638)" → "Den"
-                - "Ref CSH800876750 - (Sam 646833036)" → "Sam"
-                - "Ref CSH027647751 - (thie/6468747511)" → "thie"
-                - "In: CSH666722052: Thandi 6456043502" → "Thandi"
-                - "In: CSH815211956: Lillian6456036044" → "Lillian"
-                - "In: INN217901612: Mbeke 6457254616" → "Mbeke"
-                - "Reversal: ECO117918890: Eco 6456318627" → "Eco"
-                - "In: CSH497828830: 6457579902 Nomazulu" → "Nomazulu" (name after phone number)
-                """
-                if not isinstance(comment, str):
-                    return ''
-
-                comment = comment.strip()
-
-                # Pattern 1: Parentheses format - "Ref CSH764074250 - (Phuthani mabhena)"
-                # But not if it's just the reference itself like "Reversal: (#Ref CSH767209773)"
-                # Extract only the NAME part (letters), not phone numbers
-                paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
-                if paren_match:
-                    paren_content = paren_match.group(1).strip()
-                    # Only use if it doesn't look like a reference
-                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
-                        # Extract just the name portion from parentheses content
-                        # Handles: "Den 6468376638" → "Den", "thie/6468747511" → "thie", "Phuthani mabhena" → "Phuthani mabhena"
-                        # Pattern: Extract letters (with spaces) at start, stop at numbers or slash
-                        name_match = re.match(r'^([A-Za-z]+(?:\s+[A-Za-z]+)*)', paren_content)
-                        if name_match:
-                            return name_match.group(1).strip()
-                        # Fallback: if entire content is letters/spaces only, return it
-                        if re.match(r'^[A-Za-z\s]+$', paren_content):
-                            return paren_content
-
-                # Pattern 2: Look for "- " followed by name (with dot before)
-                # Match: ". - Name" where Name is letters (possibly with numbers attached)
-                pattern2 = r'\.\s*-\s*([A-Za-z]+)'
-                match2 = re.search(pattern2, comment)
-                if match2:
-                    return match2.group(1).strip()
-
-                # Pattern 3: Alternative format without dot
-                # Match: "- Name"
-                pattern3 = r'-\s+([A-Za-z]+)'
-                match3 = re.search(pattern3, comment)
-                if match3:
-                    return match3.group(1).strip()
-
-                # Pattern 4: If there's text after RJ/CSH/ZVC/ECO/INN number, try to extract name
-                # Supports formats like:
-                # - "CSH666722052: Thandi 6456043502" → "Thandi"
-                # - "In: CSH666722052: Thandi 6456043502" → "Thandi"
-                # - "Reversal: ECO117918890: Eco 6456318627" → "Eco"
-                # - "INN217901612: Mbeke 6457254616" → "Mbeke"
-                pattern4 = r'#?(RJ|CSH|ZVC|ECO|INN|TX)\d+[:\.\s]*-?\s*([A-Za-z]+)'
-                match4 = re.search(pattern4, comment, re.IGNORECASE)
-                if match4:
-                    return match4.group(2).strip()
-
-                # Pattern 5: Name AFTER phone number - "CSH497828830: 6457579902 Nomazulu"
-                # Matches: reference number, then phone number (10 digits), then name
-                pattern5 = r'#?(RJ|CSH|ZVC|ECO|INN|TX)\d+[:\.\s]+\d{10}\s+([A-Za-z]+)'
-                match5 = re.search(pattern5, comment, re.IGNORECASE)
-                if match5:
-                    return match5.group(2).strip()
-
-                # Fallback: Return empty if no pattern matches
-                return ''
-
-            # Apply extraction to all comments
+            # Apply extraction using unified ReferenceExtractor
             payment_refs = []
             rj_numbers = []
-            
-            for val in ledger[comment_col]:
-                payref = extract_payment_ref_from_comment(val)
-                payment_refs.append(payref)
 
-                # Also extract RJ/CSH/ZVC/ECO/INN number while we're at it
-                # Patterns: RJ123456, CSH764074250, TX123456, ZVC128809565, ECO904183634, INN757797206
-                rj_match = re.search(r'#?(RJ|CSH|TX|ZVC|ECO|INN)[-]?(\d{6,})', str(val), re.IGNORECASE)
-                rj = rj_match.group(0).replace('#', '').replace('-', '').upper() if rj_match else ''
+            for val in ledger[comment_col]:
+                # Use unified extractor for both RJ number and Payment Ref
+                rj, payref = ReferenceExtractor.extract_rj_and_ref(str(val) if pd.notna(val) else '')
+                payment_refs.append(payref)
                 rj_numbers.append(rj)
 
             # Find position to insert columns (after Comment column)
