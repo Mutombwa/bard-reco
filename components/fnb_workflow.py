@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from data_cleaner import clean_amount_column  # type: ignore
 from column_selector import ColumnSelector  # type: ignore
-from file_loader import load_uploaded_file, get_dataframe_info  # type: ignore
+from file_loader import load_uploaded_file, get_dataframe_info, sanitize_for_display  # type: ignore
 
 class FNBWorkflow:
     """FNB Bank Reconciliation Workflow with Exact GUI Logic"""
@@ -512,7 +512,7 @@ class FNBWorkflow:
                         'Description': statement.iloc[i][desc_col],
                         'Extracted Reference': references[i]
                     })
-                st.dataframe(pd.DataFrame(sample_data), width="stretch")
+                st.dataframe(sanitize_for_display(pd.DataFrame(sample_data)), width="stretch")
 
             # Rerun to update UI with new columns
             st.rerun()
@@ -587,7 +587,7 @@ class FNBWorkflow:
                 # Show sample extractions
                 with st.expander("📋 Sample Extractions (First 10)"):
                     sample_df = statement[['Description', 'Processed_Ref']].head(10)
-                    st.dataframe(sample_df, width="stretch")
+                    st.dataframe(sanitize_for_display(sample_df), width="stretch")
 
                 # Rerun to update UI with new columns
                 st.rerun()
@@ -703,7 +703,7 @@ class FNBWorkflow:
                 del st.session_state.fnb_saved_selections
 
             st.success("✅ Added RJ-Number and Payment Ref columns to ledger")
-            st.dataframe(ledger[['RJ-Number', 'Payment Ref']].head(10), width="stretch")
+            st.dataframe(sanitize_for_display(ledger[['RJ-Number', 'Payment Ref']].head(10)), width="stretch")
 
             # Rerun to update UI with new columns
             st.rerun()
@@ -1621,7 +1621,7 @@ class FNBWorkflow:
                 audit_trail = st.session_state.get('audit_trail', [])
                 if audit_trail:
                     audit_df = pd.DataFrame(audit_trail)
-                    st.dataframe(audit_df, width="stretch", height=200)
+                    st.dataframe(sanitize_for_display(audit_df), width="stretch", height=200)
                 else:
                     st.info("No audit entries yet")
         
@@ -1646,7 +1646,7 @@ class FNBWorkflow:
                 if 'matched' in results and not results['matched'].empty:
                     perfect = results['matched'][results['matched']['Match_Type'] == 'Perfect']
                     if not perfect.empty:
-                        st.dataframe(perfect, width="stretch")
+                        st.dataframe(sanitize_for_display(perfect), width="stretch")
                         st.download_button(
                             "📥 Download Perfect Matches",
                             perfect.to_csv(index=False),
@@ -1664,7 +1664,7 @@ class FNBWorkflow:
                 if 'matched' in results and not results['matched'].empty:
                     fuzzy = results['matched'][results['matched']['Match_Type'] == 'Fuzzy']
                     if not fuzzy.empty:
-                        st.dataframe(fuzzy, width="stretch")
+                        st.dataframe(sanitize_for_display(fuzzy), width="stretch")
                         st.download_button(
                             "📥 Download Fuzzy Matches",
                             fuzzy.to_csv(index=False),
@@ -1682,7 +1682,7 @@ class FNBWorkflow:
                 if 'matched' in results and not results['matched'].empty:
                     foreign = results['matched'][results['matched']['Match_Type'] == 'Foreign_Credit']
                     if not foreign.empty:
-                        st.dataframe(foreign, width="stretch")
+                        st.dataframe(sanitize_for_display(foreign), width="stretch")
                         st.download_button(
                             "📥 Download Foreign Credits",
                             foreign.to_csv(index=False),
@@ -1734,7 +1734,7 @@ class FNBWorkflow:
                                     stmt_row = statement.loc[[stmt_idx]].copy()
                                     # Remove normalized columns
                                     display_cols = [col for col in stmt_row.columns if not col.startswith('_')]
-                                    st.dataframe(stmt_row[display_cols], width="stretch", hide_index=True)
+                                    st.dataframe(sanitize_for_display(stmt_row[display_cols]), width="stretch", hide_index=True)
                                     st.markdown("")
                                 
                                 # Ledger transactions (components)
@@ -1744,7 +1744,7 @@ class FNBWorkflow:
                                     ledger_rows = ledger.loc[ledger_indices].copy()
                                     # Remove normalized columns
                                     display_cols = [col for col in ledger_rows.columns if not col.startswith('_')]
-                                    st.dataframe(ledger_rows[display_cols], width="stretch", hide_index=True)
+                                    st.dataframe(sanitize_for_display(ledger_rows[display_cols]), width="stretch", hide_index=True)
                             
                             elif split_type == 'one_to_many':
                                 # Ledger transaction (target)
@@ -1754,7 +1754,7 @@ class FNBWorkflow:
                                     ledger_row = ledger.loc[[ledger_idx]].copy()
                                     # Remove normalized columns
                                     display_cols = [col for col in ledger_row.columns if not col.startswith('_')]
-                                    st.dataframe(ledger_row[display_cols], width="stretch", hide_index=True)
+                                    st.dataframe(sanitize_for_display(ledger_row[display_cols]), width="stretch", hide_index=True)
                                     st.markdown("")
                                 
                                 # Statement transactions (components)
@@ -1764,7 +1764,7 @@ class FNBWorkflow:
                                     stmt_rows = statement.loc[stmt_indices].copy()
                                     # Remove normalized columns
                                     display_cols = [col for col in stmt_rows.columns if not col.startswith('_')]
-                                    st.dataframe(stmt_rows[display_cols], width="stretch", hide_index=True)
+                                    st.dataframe(sanitize_for_display(stmt_rows[display_cols]), width="stretch", hide_index=True)
                 else:
                     st.success("✅ No split transactions found - All transactions matched individually")
 
@@ -1776,7 +1776,7 @@ class FNBWorkflow:
                     unmatched_ledger = unmatched_ledger.fillna('')
                     
                     st.warning(f"⚠️ Found {len(unmatched_ledger)} unmatched ledger item(s)")
-                    st.dataframe(unmatched_ledger, width="stretch", height=400)
+                    st.dataframe(sanitize_for_display(unmatched_ledger), width="stretch", height=400)
                     
                     col1, col2 = st.columns(2)
                     with col1:
@@ -1801,7 +1801,7 @@ class FNBWorkflow:
                     unmatched_statement = unmatched_statement.fillna('')
                     
                     st.warning(f"⚠️ Found {len(unmatched_statement)} unmatched statement item(s)")
-                    st.dataframe(unmatched_statement, width="stretch", height=400)
+                    st.dataframe(sanitize_for_display(unmatched_statement), width="stretch", height=400)
                     
                     col1, col2 = st.columns(2)
                     with col1:
@@ -1821,7 +1821,7 @@ class FNBWorkflow:
             # Tab 6: All Matched (Combined view)
             with tabs[6]:
                 if 'matched' in results and not results['matched'].empty:
-                    st.dataframe(results['matched'], width="stretch")
+                    st.dataframe(sanitize_for_display(results['matched']), width="stretch")
                     st.download_button(
                         "📥 Download All Matched",
                         results['matched'].to_csv(index=False),
@@ -2437,7 +2437,7 @@ class FNBWorkflow:
                     split_df = pd.DataFrame(all_split_rows)
                     
                     # Display in Excel-like format (same as matched transactions)
-                    st.dataframe(split_df, width="stretch", height=600)
+                    st.dataframe(sanitize_for_display(split_df), width="stretch", height=600)
                     
                     # Download button
                     st.download_button(
@@ -2488,7 +2488,7 @@ class FNBWorkflow:
             st.markdown(f"### {category_title}")
             st.info(f"📊 Found {len(category_data)} transaction(s)")
 
-            st.dataframe(category_data, width="stretch", height=400)
+            st.dataframe(sanitize_for_display(category_data), width="stretch", height=400)
 
             # Download button
             st.download_button(

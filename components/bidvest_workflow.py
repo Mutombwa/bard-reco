@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from data_cleaner import clean_amount_column  # type: ignore
 from column_selector import ColumnSelector  # type: ignore
+from file_loader import normalize_dataframe_types, sanitize_for_display  # type: ignore
 
 # Import Supabase database service
 try:
@@ -152,9 +153,10 @@ class BidvestWorkflow:
                 if 'bidvest_ledger_file_id' not in st.session_state or st.session_state.bidvest_ledger_file_id != file_id:
                     try:
                         if ledger_file.name.endswith('.csv'):
-                            st.session_state.bidvest_ledger = pd.read_csv(ledger_file)
+                            df = pd.read_csv(ledger_file)
                         else:
-                            st.session_state.bidvest_ledger = pd.read_excel(ledger_file)
+                            df = pd.read_excel(ledger_file)
+                        st.session_state.bidvest_ledger = normalize_dataframe_types(df)
 
                         st.success(f"✅ Loaded {len(st.session_state.bidvest_ledger)} ledger rows")
                         # Store file ID to prevent reloading
@@ -178,9 +180,10 @@ class BidvestWorkflow:
                 if 'bidvest_statement_file_id' not in st.session_state or st.session_state.bidvest_statement_file_id != file_id:
                     try:
                         if statement_file.name.endswith('.csv'):
-                            st.session_state.bidvest_statement = pd.read_csv(statement_file)
+                            df = pd.read_csv(statement_file)
                         else:
-                            st.session_state.bidvest_statement = pd.read_excel(statement_file)
+                            df = pd.read_excel(statement_file)
+                        st.session_state.bidvest_statement = normalize_dataframe_types(df)
 
                         st.success(f"✅ Loaded {len(st.session_state.bidvest_statement)} statement rows")
                         # Store file ID to prevent reloading
@@ -339,7 +342,7 @@ class BidvestWorkflow:
                             'Comment': ledger.iloc[i][comment_col],
                             'Extracted Reference': references[i]
                         })
-                    st.dataframe(pd.DataFrame(preview_data), width="stretch")
+                    st.dataframe(sanitize_for_display(pd.DataFrame(preview_data)), width="stretch")
                 
                 # Trigger rerun to refresh UI
                 st.rerun()
@@ -706,7 +709,7 @@ class BidvestWorkflow:
                     results['statement'],
                     st.session_state.bidvest_match_config
                 )
-                st.dataframe(exact_data, width="stretch")
+                st.dataframe(sanitize_for_display(exact_data), width="stretch")
                 st.download_button(
                     "📥 Download 100% Exact Matches",
                     exact_data.to_csv(index=False),
@@ -725,7 +728,7 @@ class BidvestWorkflow:
                     results['statement'],
                     st.session_state.bidvest_match_config
                 )
-                st.dataframe(grouped_data, width="stretch")
+                st.dataframe(sanitize_for_display(grouped_data), width="stretch")
                 st.download_button(
                     "📥 Download Grouped Matches",
                     grouped_data.to_csv(index=False),
@@ -743,7 +746,7 @@ class BidvestWorkflow:
             unmatched_ledger = unmatched_ledger.drop(columns=['__date', '__debit', '__credit'], errors='ignore')
 
             if not unmatched_ledger.empty:
-                st.dataframe(unmatched_ledger, width="stretch")
+                st.dataframe(sanitize_for_display(unmatched_ledger), width="stretch")
                 st.download_button(
                     "📥 Download Unmatched Ledger",
                     unmatched_ledger.to_csv(index=False),
@@ -761,7 +764,7 @@ class BidvestWorkflow:
             unmatched_statement = unmatched_statement.drop(columns=['__date', '__amt'], errors='ignore')
 
             if not unmatched_statement.empty:
-                st.dataframe(unmatched_statement, width="stretch")
+                st.dataframe(sanitize_for_display(unmatched_statement), width="stretch")
                 st.download_button(
                     "📥 Download Unmatched Statement",
                     unmatched_statement.to_csv(index=False),

@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 # Import Supabase database service
+from file_loader import sanitize_for_display  # type: ignore
+
 try:
     from supabase_db import get_db as get_supabase_db, save_reconciliation_results
 except ImportError:
@@ -223,9 +225,9 @@ class CorporateWorkflow:
 
                     load_time = time.time() - start_time
 
-                    # Sanitize object columns: fill NaN with empty string to prevent Arrow serialization errors
-                    for col in df.select_dtypes(include=['object']).columns:
-                        df[col] = df[col].fillna('').astype(str)
+                    # Normalize data types to prevent Arrow serialization errors
+                    from utils.file_loader import normalize_dataframe_types
+                    df = normalize_dataframe_types(df)
 
                     st.session_state.corporate_data = df
                     st.session_state.corporate_df = df
@@ -244,7 +246,7 @@ class CorporateWorkflow:
                 with st.expander("👁️ Preview Data"):
                     preview_df = st.session_state.corporate_df
                     st.info(f"Current columns: {', '.join(str(col) for col in preview_df.columns.tolist())}")
-                    st.dataframe(preview_df.head(20), width="stretch")
+                    st.dataframe(sanitize_for_display(preview_df.head(20)), width="stretch")
 
                 st.markdown("---")
                 st.markdown("### 🔍 Extract References from Comment Column")
@@ -867,7 +869,7 @@ class CorporateWorkflow:
             st.metric("Extraction Rate", f"{rate:.1f}%")
 
         cols = ['Reference'] + [col for col in df.columns if str(col) != 'Reference']
-        st.dataframe(df[cols], width="stretch", height=400)
+        st.dataframe(sanitize_for_display(df[cols]), width="stretch", height=400)
 
         if st.button("🔼 Hide Data View"):
             st.session_state.show_extracted_data = False
@@ -962,7 +964,7 @@ class CorporateWorkflow:
                 st.markdown(f"**{batch_title}** - {len(batch_df):,} transactions")
                 if not batch_df.empty:
                     display_df = batch_df.drop(columns=[c for c in batch_df.columns if isinstance(c, str) and c.startswith('_')], errors='ignore')
-                    st.dataframe(display_df, width="stretch", height=200)
+                    st.dataframe(sanitize_for_display(display_df), width="stretch", height=200)
                 else:
                     st.caption("No transactions in this batch")
                 st.markdown("---")

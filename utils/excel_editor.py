@@ -12,6 +12,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from typing import Optional, Tuple
+from utils.file_loader import sanitize_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ class ExcelEditor:
                 preview_df = self._preview_paste_data(paste_data)
                 if preview_df is not None:
                     st.markdown("**Preview (first 5 rows):**")
-                    st.dataframe(preview_df.head(5), width="stretch")
+                    st.dataframe(sanitize_for_display(preview_df.head(5)), width="stretch")
                     st.caption(f"📊 Ready to paste: {len(preview_df)} rows × {len(preview_df.columns)} columns")
 
             col_p1, col_p2, col_p3 = st.columns(3)
@@ -248,7 +249,7 @@ class ExcelEditor:
         # IMPORTANT: Set num_rows="fixed" to prevent paste confusion
         # Users should use the paste area above for bulk operations
         edited_df = st.data_editor(
-            edited_data,
+            sanitize_for_display(edited_data),
             width="stretch",
             num_rows="fixed",  # Fixed rows - use paste area or add/insert buttons for new rows
             key=f"{self.key_prefix}_data_grid",
@@ -582,7 +583,7 @@ class ExcelEditor:
             
             # Show preview of row to delete
             st.write(f"**Row {position} preview:**")
-            st.dataframe(edited_data.iloc[[int(position)-1]], width="stretch")
+            st.dataframe(sanitize_for_display(edited_data.iloc[[int(position)-1]]), width="stretch")
             
             if st.form_submit_button("🗑️ Delete Row", width="stretch"):
                 # Convert to 0-based index
@@ -891,7 +892,7 @@ class ExcelEditor:
                 filtered = self._apply_filter(edited_data, filter_col, filter_op, filter_value)
                 if filtered is not None:
                     st.markdown(f"**Preview ({len(filtered)} rows):**")
-                    st.dataframe(filtered.head(20), width="stretch")
+                    st.dataframe(sanitize_for_display(filtered.head(20)), width="stretch")
 
         with col_btn2:
             if st.button("✂️ Keep Only Filtered", key=f"{self.key_prefix}_keep_filter_btn", width="stretch"):

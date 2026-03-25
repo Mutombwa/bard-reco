@@ -11,6 +11,8 @@ import numpy as np
 from datetime import datetime
 import re
 
+from utils.file_loader import sanitize_for_display
+
 logger = logging.getLogger(__name__)
 
 class DataEditor:
@@ -38,7 +40,7 @@ class DataEditor:
 
         # Use Streamlit's built-in data editor
         edited_df = st.data_editor(
-            self.df,
+            sanitize_for_display(self.df),
             width="stretch",
             num_rows="dynamic",
             key=f"editor_{self.data_type}",
@@ -95,7 +97,7 @@ class DataEditor:
                 if st.button("🔍 Apply Filter"):
                     if search_term:
                         filtered_df = self._filter_data(edited_df, search_column, search_term)
-                        st.dataframe(filtered_df, width="stretch")
+                        st.dataframe(sanitize_for_display(filtered_df), width="stretch")
 
         # Statistics
         st.markdown("---")

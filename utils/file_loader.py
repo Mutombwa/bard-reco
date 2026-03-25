@@ -95,7 +95,8 @@ def normalize_dataframe_types(df: pd.DataFrame) -> pd.DataFrame:
                 yyyymmdd_pattern = sample.str.match(r'^(19|20)\d{6}$')
                 if yyyymmdd_pattern.sum() / len(sample) >= 0.5:
                     # This looks like YYYYMMDD dates - keep as string, don't convert to number
-                    df[col] = df[col].astype(str).replace('nan', '')
+                    df[col] = df[col].fillna('').astype(str)
+                    df[col] = df[col].replace({'nan': '', 'None': '', 'NaT': '', '<NA>': ''})
                     continue
 
             # Try numeric conversion (but skip date-like columns)
@@ -121,7 +122,8 @@ def normalize_dataframe_types(df: pd.DataFrame) -> pd.DataFrame:
                 pass
 
             # Default: ensure consistent string type
-            df[col] = df[col].astype(str).replace('nan', '')
+            df[col] = df[col].fillna('').astype(str)
+            df[col] = df[col].replace({'nan': '', 'None': '', 'NaT': '', '<NA>': ''})
 
     return df
 
@@ -175,6 +177,29 @@ def load_uploaded_file(
     else:
         # Return existing data
         return st.session_state.get(session_key), False
+
+
+def sanitize_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sanitize a DataFrame right before passing to st.dataframe() or st.data_editor().
+
+    Ensures all object columns have consistent types so PyArrow serialization
+    does not fail with "Could not convert X with type float: tried to convert to str".
+    This is a lightweight pass — use normalize_dataframe_types() for full normalization at load time.
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return df if isinstance(df, pd.DataFrame) else pd.DataFrame()
+
+    df = df.copy()
+    # Ensure column names are strings
+    df.columns = [str(c) for c in df.columns]
+
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            # Force uniform string type — the root cause of Arrow errors
+            df[col] = df[col].fillna('').astype(str)
+            df[col] = df[col].replace({'nan': '', 'None': '', 'NaT': '', '<NA>': ''})
+    return df
 
 
 def get_dataframe_info(df: pd.DataFrame) -> str:

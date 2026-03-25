@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from data_cleaner import clean_amount_column  # type: ignore
 from column_selector import ColumnSelector  # type: ignore
-from file_loader import load_uploaded_file, get_dataframe_info  # type: ignore
+from file_loader import load_uploaded_file, get_dataframe_info, sanitize_for_display  # type: ignore
 from extraction import ReferenceExtractor  # type: ignore
 
 
@@ -379,7 +379,7 @@ class KazangWorkflow:
                         'Payment Ref': payment_refs[i],
                         'RJ-Number': rj_numbers[i]
                     })
-                st.dataframe(pd.DataFrame(sample_data), width="stretch")
+                st.dataframe(sanitize_for_display(pd.DataFrame(sample_data)), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error extracting Payment Ref: {str(e)}")
@@ -439,7 +439,7 @@ class KazangWorkflow:
                         'Original Comment': ledger.iloc[i][comment_col],
                         'RJ-Number': rj_numbers[i]
                     })
-                st.dataframe(pd.DataFrame(sample_data), width="stretch")
+                st.dataframe(sanitize_for_display(pd.DataFrame(sample_data)), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error extracting RJ numbers: {str(e)}")
@@ -975,7 +975,7 @@ class KazangWorkflow:
         if category_data is not None and not category_data.empty:
             st.markdown(f"### {category_title}")
             st.info(f"📊 Found {len(category_data)} transaction(s)")
-            st.dataframe(category_data, width="stretch", height=400)
+            st.dataframe(sanitize_for_display(category_data), width="stretch", height=400)
             st.download_button(
                 f"📥 Download {category_title}",
                 category_data.to_csv(index=False),

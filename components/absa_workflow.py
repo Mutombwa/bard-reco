@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from data_cleaner import clean_amount_column  # type: ignore
 from column_selector import ColumnSelector  # type: ignore
-from file_loader import load_uploaded_file, get_dataframe_info  # type: ignore
+from file_loader import load_uploaded_file, get_dataframe_info, sanitize_for_display  # type: ignore
 
 # Import Supabase database service
 try:
@@ -459,7 +459,7 @@ class ABSAWorkflow:
             # Show preview
             with st.expander("📊 Preview Extracted Data (first 10 rows)"):
                 preview_cols = [desc_col, 'Reference', 'Fee']
-                st.dataframe(statement[preview_cols].head(10), width="stretch")
+                st.dataframe(sanitize_for_display(statement[preview_cols].head(10)), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error extracting ABSA data: {str(e)}")
@@ -558,7 +558,7 @@ class ABSAWorkflow:
 
             st.success("✅ Reference extracted from ledger!")
             with st.expander("📊 Preview (first 10 rows)"):
-                st.dataframe(ledger[[desc_col, 'Reference']].head(10), width="stretch")
+                st.dataframe(sanitize_for_display(ledger[[desc_col, 'Reference']].head(10)), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error adding reference: {str(e)}")
@@ -643,7 +643,7 @@ class ABSAWorkflow:
                 del st.session_state.absa_saved_selections
 
             st.success("✅ Added RJ-Number and Payment Ref columns to ledger")
-            st.dataframe(ledger[['RJ-Number', 'Payment Ref']].head(10), width="stretch")
+            st.dataframe(sanitize_for_display(ledger[['RJ-Number', 'Payment Ref']].head(10)), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error generating RJ & Payment Ref: {str(e)}")
@@ -912,15 +912,15 @@ class ABSAWorkflow:
         
         with tabs[0]:
             if 'matched' in results and not results['matched'].empty:
-                st.dataframe(results['matched'], width="stretch")
+                st.dataframe(sanitize_for_display(results['matched']), width="stretch")
         
         with tabs[1]:
             if 'unmatched_ledger' in results and not results['unmatched_ledger'].empty:
-                st.dataframe(results['unmatched_ledger'], width="stretch")
+                st.dataframe(sanitize_for_display(results['unmatched_ledger']), width="stretch")
         
         with tabs[2]:
             if 'unmatched_statement' in results and not results['unmatched_statement'].empty:
-                st.dataframe(results['unmatched_statement'], width="stretch")
+                st.dataframe(sanitize_for_display(results['unmatched_statement']), width="stretch")
 
         # Save to Database section
         st.markdown("---")

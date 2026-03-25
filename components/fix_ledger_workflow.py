@@ -23,7 +23,7 @@ import io
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
-from file_loader import load_uploaded_file, get_dataframe_info  # type: ignore
+from file_loader import load_uploaded_file, get_dataframe_info, sanitize_for_display  # type: ignore
 
 
 class FixLedgerWorkflow:
@@ -128,7 +128,7 @@ class FixLedgerWorkflow:
                 with st.expander("📋 View Columns"):
                     st.code(", ".join(st.session_state.fix_ledger_palladium.columns))
                 with st.expander("👁️ Preview Data (first 5 rows)"):
-                    st.dataframe(st.session_state.fix_ledger_palladium.head(), width="stretch")
+                    st.dataframe(sanitize_for_display(st.session_state.fix_ledger_palladium.head()), width="stretch")
 
             palladium_file = st.file_uploader(
                 "Upload Palladium Ledger",
@@ -162,7 +162,7 @@ class FixLedgerWorkflow:
                 with st.expander("📋 View Columns"):
                     st.code(", ".join(st.session_state.fix_ledger_tx_report.columns))
                 with st.expander("👁️ Preview Data (first 5 rows)"):
-                    st.dataframe(st.session_state.fix_ledger_tx_report.head(), width="stretch")
+                    st.dataframe(sanitize_for_display(st.session_state.fix_ledger_tx_report.head()), width="stretch")
 
             tx_file = st.file_uploader(
                 "Upload TX Report",
@@ -318,13 +318,13 @@ class FixLedgerWorkflow:
         with st.expander("🔍 View Sample Extractions (first 20 rows)", expanded=True):
             preview_df = palladium_df[[comment_col, 'TX_REF']].head(20).copy()
             preview_df.columns = ['Original Comment', 'Extracted TX_REF']
-            st.dataframe(preview_df, width="stretch")
+            st.dataframe(sanitize_for_display(preview_df), width="stretch")
 
         # Show rows without references
         if not_extracted > 0:
             with st.expander(f"⚠️ Rows Without References ({not_extracted} rows)"):
                 no_ref_df = palladium_df[palladium_df['TX_REF'] == ''][[comment_col]].head(20)
-                st.dataframe(no_ref_df, width="stretch")
+                st.dataframe(sanitize_for_display(no_ref_df), width="stretch")
                 if not_extracted > 20:
                     st.caption(f"Showing first 20 of {not_extracted} rows without references")
 
@@ -503,7 +503,7 @@ class FixLedgerWorkflow:
                 # Add other columns from original data
                 other_cols = [c for c in results['matched_df'].columns if c not in display_cols]
                 display_df = results['matched_df'][display_cols + other_cols[:5]]  # Limit extra cols for display
-                st.dataframe(display_df, width="stretch", height=400)
+                st.dataframe(sanitize_for_display(display_df), width="stretch", height=400)
             else:
                 st.warning("No matches found")
 
@@ -511,7 +511,7 @@ class FixLedgerWorkflow:
             if not results['side_by_side_df'].empty:
                 st.markdown("**Side-by-Side View** - Palladium Ledger (green) | TX Report (blue)")
                 st.caption("Matched transactions shown with corresponding TX Report data")
-                st.dataframe(results['side_by_side_df'], width="stretch", height=400)
+                st.dataframe(sanitize_for_display(results['side_by_side_df']), width="stretch", height=400)
             else:
                 st.warning("No matched transactions for side-by-side view")
 
@@ -525,13 +525,13 @@ class FixLedgerWorkflow:
                 with col2:
                     st.metric("📝 No Reference in Comment", results['no_ref_count'])
 
-                st.dataframe(results['all_unmatched_df'], width="stretch", height=400)
+                st.dataframe(sanitize_for_display(results['all_unmatched_df']), width="stretch", height=400)
             else:
                 st.success("✅ All transactions were matched!")
 
         with tab4:
             st.markdown("**Complete Enriched Palladium Ledger** - All original columns + TX_REF + Source Payment Reference")
-            st.dataframe(results['enriched_df'], width="stretch", height=400)
+            st.dataframe(sanitize_for_display(results['enriched_df']), width="stretch", height=400)
 
         with tab5:
             self.render_download_section(results)

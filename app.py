@@ -20,6 +20,7 @@ sys.path.append(str(Path(__file__).parent))
 from auth.hybrid_auth import HybridAuthentication as Authentication
 
 from utils.session_state import SessionState
+from utils.file_loader import sanitize_for_display
 from config.app_config import APP_CONFIG
 
 # Heavy imports will be done lazily when needed
@@ -384,7 +385,7 @@ def show_reconciliation_page():
 
             # Show preview (collapsed by default to reduce initial load)
             with st.expander("👁️ Preview Data", expanded=False):
-                st.dataframe(ledger_df.head(10), width="stretch")
+                st.dataframe(sanitize_for_display(ledger_df.head(10)), width="stretch")
                 st.info(f"📊 {get_dataframe_info(ledger_df)}")
 
     with col2:
@@ -412,7 +413,7 @@ def show_reconciliation_page():
 
             # Show preview (collapsed by default to reduce initial load)
             with st.expander("👁️ Preview Data", expanded=False):
-                st.dataframe(statement_df.head(10), width="stretch")
+                st.dataframe(sanitize_for_display(statement_df.head(10)), width="stretch")
                 st.info(f"📊 {get_dataframe_info(statement_df)}")
 
     # Data editing option
@@ -578,25 +579,25 @@ def show_reconciliation_results(results):
 
     with tab1:
         if results.get('perfect_matches'):
-            st.dataframe(results['perfect_matches'], width="stretch")
+            st.dataframe(sanitize_for_display(results['perfect_matches']), width="stretch")
         else:
             st.info("No perfect matches found")
 
     with tab2:
         if results.get('fuzzy_matches'):
-            st.dataframe(results['fuzzy_matches'], width="stretch")
+            st.dataframe(sanitize_for_display(results['fuzzy_matches']), width="stretch")
         else:
             st.info("No fuzzy matches found")
 
     with tab3:
         if results.get('balanced'):
-            st.dataframe(results['balanced'], width="stretch")
+            st.dataframe(sanitize_for_display(results['balanced']), width="stretch")
         else:
             st.info("No balanced matches found")
 
     with tab4:
         if results.get('unmatched'):
-            st.dataframe(results['unmatched'], width="stretch")
+            st.dataframe(sanitize_for_display(results['unmatched']), width="stretch")
         else:
             st.success("✅ All transactions matched!")
 
@@ -685,7 +686,7 @@ def show_saved_reconciliations():
                 })
 
             df = pd.DataFrame(results_data)
-            st.dataframe(df, width="stretch")
+            st.dataframe(sanitize_for_display(df), width="stretch")
 
             # Delete functionality
             st.markdown("---")
@@ -724,26 +725,26 @@ def show_result_viewer():
                 # Display summary
                 st.markdown("### 📊 Summary")
                 summary_df = pd.DataFrame([result['summary']])
-                st.dataframe(summary_df, width="stretch")
+                st.dataframe(sanitize_for_display(summary_df), width="stretch")
 
                 # Display data in tabs
                 tab1, tab2, tab3 = st.tabs(["✅ Matched", "📋 Unmatched Ledger", "🏦 Unmatched Statement"])
 
                 with tab1:
                     if not result['matched'].empty:
-                        st.dataframe(result['matched'], width="stretch")
+                        st.dataframe(sanitize_for_display(result['matched']), width="stretch")
                     else:
                         st.info("No matched transactions")
 
                 with tab2:
                     if not result['unmatched_ledger'].empty:
-                        st.dataframe(result['unmatched_ledger'], width="stretch")
+                        st.dataframe(sanitize_for_display(result['unmatched_ledger']), width="stretch")
                     else:
                         st.info("No unmatched ledger items")
 
                 with tab3:
                     if not result['unmatched_statement'].empty:
-                        st.dataframe(result['unmatched_statement'], width="stretch")
+                        st.dataframe(sanitize_for_display(result['unmatched_statement']), width="stretch")
                     else:
                         st.info("No unmatched statement items")
             else:

@@ -338,9 +338,9 @@ class BaseWorkflow(ABC):
             else:
                 df = pd.read_excel(file, engine='openpyxl')
 
-            # Sanitize object columns to prevent Arrow serialization errors
-            for col in df.select_dtypes(include=['object']).columns:
-                df[col] = df[col].fillna('').astype(str)
+            # Normalize data types to prevent Arrow serialization errors
+            from utils.file_loader import normalize_dataframe_types
+            df = normalize_dataframe_types(df)
 
             return df
         except Exception as e:
@@ -351,6 +351,5 @@ class BaseWorkflow(ABC):
     @staticmethod
     def sanitize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         """Sanitize DataFrame for Arrow serialization compatibility."""
-        for col in df.select_dtypes(include=['object']).columns:
-            df[col] = df[col].fillna('').astype(str)
-        return df
+        from utils.file_loader import sanitize_for_display
+        return sanitize_for_display(df)
