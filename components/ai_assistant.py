@@ -229,7 +229,7 @@ def render_ai_sidebar():
     with st.sidebar:
         st.divider()
         
-        if st.button("💬 Ask AI Assistant", use_container_width=True):
+        if st.button("💬 Ask AI Assistant", width="stretch"):
             st.session_state['show_ai_chat'] = True
         
         # Show AI status
@@ -240,7 +240,7 @@ def render_ai_sidebar():
                 st.success("🤖 AI Online")
             else:
                 st.error("🤖 AI Offline")
-        except:
+        except (ConnectionError, OSError, Exception):
             st.warning("🤖 AI Starting...")
             st.caption("Start Ollama to enable AI features")
 
@@ -251,5 +251,5 @@ def check_ai_status():
         import requests
         response = requests.get("http://localhost:11434/api/tags", timeout=2)
         return response.status_code == 200
-    except:
+    except (ConnectionError, OSError, Exception):
         return False

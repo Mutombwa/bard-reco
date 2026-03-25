@@ -8,7 +8,7 @@ port = 8501
 headless = true
 # Disable XSRF protection to allow file uploads without 403 errors
 enableCORS = false
-enableXsrfProtection = false
+enableXsrfProtection = true
 maxUploadSize = 200
 runOnSave = false
 fileWatcherType = "none"

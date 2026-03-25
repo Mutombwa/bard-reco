@@ -7,10 +7,13 @@ Provides full Excel-like editing capabilities for DataFrames
 - Save changes
 """
 
+import logging
 import streamlit as st
 import pandas as pd
 import numpy as np
 from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 class ExcelEditor:
     """Excel-like data editor with full CRUD operations"""
@@ -70,28 +73,28 @@ class ExcelEditor:
             st.caption(f"📊 {len(edited_data)} rows × {len(edited_data.columns)} columns")
         
         with col2:
-            if st.button("➕ Add Row [A]", key=f"{self.key_prefix}_add_row", help="Add empty row at bottom", use_container_width=True):
+            if st.button("➕ Add Row [A]", key=f"{self.key_prefix}_add_row", help="Add empty row at bottom", width="stretch"):
                 self._add_row()
                 st.rerun()
         
         with col3:
-            if st.button("� Insert Row", key=f"{self.key_prefix}_insert_btn", help="Insert row at position", use_container_width=True):
+            if st.button("� Insert Row", key=f"{self.key_prefix}_insert_btn", help="Insert row at position", width="stretch"):
                 st.session_state[f'{self.key_prefix}_show_insert'] = True
                 st.rerun()
         
         with col4:
-            if st.button("🗑️ Delete Row", key=f"{self.key_prefix}_delete_btn", help="Delete specific row", use_container_width=True):
+            if st.button("🗑️ Delete Row", key=f"{self.key_prefix}_delete_btn", help="Delete specific row", width="stretch"):
                 st.session_state[f'{self.key_prefix}_show_delete'] = True
                 st.rerun()
         
         with col5:
-            if st.button("🔄 Reset [R]", key=f"{self.key_prefix}_reset", help="Reset to original", use_container_width=True):
+            if st.button("🔄 Reset [R]", key=f"{self.key_prefix}_reset", help="Reset to original", width="stretch"):
                 st.session_state[f'{self.key_prefix}_edited_data'] = self.data.copy()
                 st.success("✅ Data reset to original")
                 st.rerun()
         
         with col6:
-            if st.button("💾 Save [S]", key=f"{self.key_prefix}_save", type="primary", help="Save all changes", use_container_width=True):
+            if st.button("💾 Save [S]", key=f"{self.key_prefix}_save", type="primary", help="Save all changes", width="stretch"):
                 return edited_data.copy()
         
         st.markdown("---")
@@ -144,7 +147,7 @@ class ExcelEditor:
                 preview_df = self._preview_paste_data(paste_data)
                 if preview_df is not None:
                     st.markdown("**Preview (first 5 rows):**")
-                    st.dataframe(preview_df.head(5), use_container_width=True)
+                    st.dataframe(preview_df.head(5), width="stretch")
                     st.caption(f"📊 Ready to paste: {len(preview_df)} rows × {len(preview_df.columns)} columns")
 
             col_p1, col_p2, col_p3 = st.columns(3)
@@ -156,7 +159,7 @@ class ExcelEditor:
                 )
 
             with col_p2:
-                if st.button("✅ Paste Data", key=f"{self.key_prefix}_do_paste", use_container_width=True, type="primary"):
+                if st.button("✅ Paste Data", key=f"{self.key_prefix}_do_paste", width="stretch", type="primary"):
                     if paste_data and paste_data.strip():
                         success = self._bulk_paste(paste_data, paste_position)
                         if success:
@@ -167,7 +170,7 @@ class ExcelEditor:
                         st.warning("⚠️ Please paste data in the text area first")
 
             with col_p3:
-                if st.button("🔄 Clear", key=f"{self.key_prefix}_clear_paste", use_container_width=True):
+                if st.button("🔄 Clear", key=f"{self.key_prefix}_clear_paste", width="stretch"):
                     st.rerun()
         
         # Column management
@@ -246,7 +249,7 @@ class ExcelEditor:
         # Users should use the paste area above for bulk operations
         edited_df = st.data_editor(
             edited_data,
-            use_container_width=True,
+            width="stretch",
             num_rows="fixed",  # Fixed rows - use paste area or add/insert buttons for new rows
             key=f"{self.key_prefix}_data_grid",
             height=400,
@@ -427,7 +430,7 @@ class ExcelEditor:
                                 pasted_df[col] = temp_conversion
                                 converted = True
                                 break
-                        except:
+                        except (ValueError, TypeError, KeyError):
                             continue
 
                     # If none worked well but we have some success, use best conversion
@@ -438,7 +441,7 @@ class ExcelEditor:
                         # Last resort: pandas' automatic inference
                         try:
                             pasted_df[col] = pd.to_datetime(original_values, errors='coerce', infer_datetime_format=True)
-                        except:
+                        except (ValueError, TypeError, KeyError):
                             # If all else fails, keep as string
                             pasted_df[col] = original_values
 
@@ -544,7 +547,7 @@ class ExcelEditor:
                 key=f"{self.key_prefix}_insert_pos"
             )
             
-            if st.form_submit_button("📥 Insert Row", use_container_width=True):
+            if st.form_submit_button("📥 Insert Row", width="stretch"):
                 # Convert to 0-based index
                 pos = int(position) - 1
                 
@@ -579,9 +582,9 @@ class ExcelEditor:
             
             # Show preview of row to delete
             st.write(f"**Row {position} preview:**")
-            st.dataframe(edited_data.iloc[[int(position)-1]], use_container_width=True)
+            st.dataframe(edited_data.iloc[[int(position)-1]], width="stretch")
             
-            if st.form_submit_button("🗑️ Delete Row", use_container_width=True):
+            if st.form_submit_button("🗑️ Delete Row", width="stretch"):
                 # Convert to 0-based index
                 pos = int(position) - 1
                 
@@ -598,7 +601,7 @@ class ExcelEditor:
             col_name = st.text_input("New Column Name", key=f"{self.key_prefix}_new_col_name")
             default_value = st.text_input("Default Value (optional)", key=f"{self.key_prefix}_new_col_default")
             
-            if st.form_submit_button("➕ Add Column", use_container_width=True):
+            if st.form_submit_button("➕ Add Column", width="stretch"):
                 if col_name:
                     edited_data = st.session_state[f'{self.key_prefix}_edited_data']
                     edited_data[col_name] = default_value if default_value else ""
@@ -622,7 +625,7 @@ class ExcelEditor:
             key=f"{self.key_prefix}_del_col_select"
         )
         
-        if st.button("🗑️ Delete Column", key=f"{self.key_prefix}_del_col_btn", use_container_width=True):
+        if st.button("🗑️ Delete Column", key=f"{self.key_prefix}_del_col_btn", width="stretch"):
             if col_to_delete:
                 edited_data = edited_data.drop(columns=[col_to_delete])
                 st.session_state[f'{self.key_prefix}_edited_data'] = edited_data
@@ -653,7 +656,7 @@ class ExcelEditor:
                 key=f"{self.key_prefix}_rename_col_new"
             )
         
-        if st.button("✏️ Rename Column", key=f"{self.key_prefix}_rename_col_btn", use_container_width=True):
+        if st.button("✏️ Rename Column", key=f"{self.key_prefix}_rename_col_btn", width="stretch"):
             if new_name and old_name != new_name:
                 edited_data = edited_data.rename(columns={old_name: new_name})
                 st.session_state[f'{self.key_prefix}_edited_data'] = edited_data
@@ -693,9 +696,9 @@ class ExcelEditor:
 
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                find_btn = st.form_submit_button("🔍 Find", use_container_width=True)
+                find_btn = st.form_submit_button("🔍 Find", width="stretch")
             with col_btn2:
-                replace_btn = st.form_submit_button("🔄 Replace All", use_container_width=True)
+                replace_btn = st.form_submit_button("🔄 Replace All", width="stretch")
 
             if find_btn and find_value:
                 # Find matches
@@ -787,7 +790,7 @@ class ExcelEditor:
                 horizontal=True
             )
 
-        if st.button("🔀 Sort Data", key=f"{self.key_prefix}_sort_btn", use_container_width=True):
+        if st.button("🔀 Sort Data", key=f"{self.key_prefix}_sort_btn", width="stretch"):
             ascending = (sort_order == "Ascending")
             sorted_data = edited_data.sort_values(by=sort_col, ascending=ascending).reset_index(drop=True)
             st.session_state[f'{self.key_prefix}_edited_data'] = sorted_data
@@ -836,7 +839,7 @@ class ExcelEditor:
 
         st.info(f"📊 Found {dup_count} duplicate row(s)")
 
-        if st.button("🧹 Remove Duplicates", key=f"{self.key_prefix}_remove_dup_btn", use_container_width=True):
+        if st.button("🧹 Remove Duplicates", key=f"{self.key_prefix}_remove_dup_btn", width="stretch"):
             if dup_option == "Based on specific columns" and not subset_cols:
                 st.error("❌ Please select at least one column")
                 return
@@ -884,14 +887,14 @@ class ExcelEditor:
 
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            if st.button("🔍 Show Filtered", key=f"{self.key_prefix}_show_filter_btn", use_container_width=True):
+            if st.button("🔍 Show Filtered", key=f"{self.key_prefix}_show_filter_btn", width="stretch"):
                 filtered = self._apply_filter(edited_data, filter_col, filter_op, filter_value)
                 if filtered is not None:
                     st.markdown(f"**Preview ({len(filtered)} rows):**")
-                    st.dataframe(filtered.head(20), use_container_width=True)
+                    st.dataframe(filtered.head(20), width="stretch")
 
         with col_btn2:
-            if st.button("✂️ Keep Only Filtered", key=f"{self.key_prefix}_keep_filter_btn", use_container_width=True):
+            if st.button("✂️ Keep Only Filtered", key=f"{self.key_prefix}_keep_filter_btn", width="stretch"):
                 filtered = self._apply_filter(edited_data, filter_col, filter_op, filter_value)
                 if filtered is not None and len(filtered) > 0:
                     st.session_state[f'{self.key_prefix}_edited_data'] = filtered.reset_index(drop=True)

@@ -4,6 +4,8 @@ PostgreSQL/Supabase Database Module for Reconciliation App
 Cloud-compatible database that works on Streamlit Cloud
 """
 
+import logging
+
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
@@ -16,6 +18,8 @@ import pandas as pd
 from datetime import datetime
 from typing import Optional, Dict, List
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 
 class PostgreSQLDatabase:
@@ -43,7 +47,7 @@ class PostgreSQLDatabase:
             password = db_config.get("password", "")
             
             return f"postgresql://{user}:{password}@{host}:{port}/{database}"
-        except:
+        except (KeyError, TypeError, AttributeError):
             return "postgresql://postgres:password@localhost:5432/reconciliation_db"
     
     def connect(self) -> bool:
@@ -64,6 +68,18 @@ class PostgreSQLDatabase:
         if self.conn:
             self.conn.close()
             self.conn = None
+
+    def close(self):
+        """Close database connection (alias for disconnect)."""
+        self.disconnect()
+
+    def __enter__(self):
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
     
     def create_tables(self):
         """Create database tables if they don't exist"""
@@ -140,6 +156,7 @@ class PostgreSQLDatabase:
             
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error creating tables: %s", str(e))
             st.error(f"Error creating tables: {str(e)}")
             return False
         finally:
@@ -165,6 +182,7 @@ class PostgreSQLDatabase:
             
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error creating session: %s", str(e))
             st.error(f"Error creating session: {str(e)}")
             return None
         finally:
@@ -178,16 +196,9 @@ class PostgreSQLDatabase:
         
         cursor = self.conn.cursor()
         try:
+            records = []
             for _, row in matched_df.iterrows():
-                cursor.execute("""
-                    INSERT INTO matched_transactions (
-                        session_id, match_type, 
-                        ledger_date, ledger_reference, ledger_debit, ledger_credit, ledger_description,
-                        statement_date, statement_reference, statement_amount, statement_description,
-                        match_score, currency
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
+                records.append((
                     session_id,
                     row.get('Match_Type', 'Unknown'),
                     row.get('Ledger_Date'),
@@ -202,12 +213,24 @@ class PostgreSQLDatabase:
                     row.get('Match_Score', 0),
                     row.get('Currency', 'ZAR')
                 ))
-            
+
+            cursor.executemany("""
+                INSERT INTO matched_transactions (
+                    session_id, match_type,
+                    ledger_date, ledger_reference, ledger_debit, ledger_credit, ledger_description,
+                    statement_date, statement_reference, statement_amount, statement_description,
+                    match_score, currency
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, records)
+
             self.conn.commit()
+            logger.info("Batch inserted %d matched transactions for session_id=%d", len(records), session_id)
             return True
-            
+
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error saving matched transactions: %s", str(e))
             st.error(f"Error saving matched transactions: {str(e)}")
             return False
         finally:
@@ -222,15 +245,11 @@ class PostgreSQLDatabase:
         
         cursor = self.conn.cursor()
         try:
-            # Save unmatched ledger
+            # Save unmatched ledger (batch insert)
             if not unmatched_ledger.empty:
+                ledger_records = []
                 for _, row in unmatched_ledger.iterrows():
-                    cursor.execute("""
-                        INSERT INTO unmatched_transactions (
-                            session_id, source, transaction_date, reference, amount, description, currency
-                        )
-                        VALUES (%s, 'Ledger', %s, %s, %s, %s, %s)
-                    """, (
+                    ledger_records.append((
                         session_id,
                         row.get('Date'),
                         str(row.get('Reference', ''))[:255],
@@ -238,16 +257,20 @@ class PostgreSQLDatabase:
                         str(row.get('Description', '')),
                         row.get('Currency', 'ZAR')
                     ))
-            
-            # Save unmatched statement
+
+                cursor.executemany("""
+                    INSERT INTO unmatched_transactions (
+                        session_id, source, transaction_date, reference, amount, description, currency
+                    )
+                    VALUES (%s, 'Ledger', %s, %s, %s, %s, %s)
+                """, ledger_records)
+                logger.info("Batch inserted %d unmatched ledger transactions for session_id=%d", len(ledger_records), session_id)
+
+            # Save unmatched statement (batch insert)
             if not unmatched_statement.empty:
+                statement_records = []
                 for _, row in unmatched_statement.iterrows():
-                    cursor.execute("""
-                        INSERT INTO unmatched_transactions (
-                            session_id, source, transaction_date, reference, amount, description, currency
-                        )
-                        VALUES (%s, 'Statement', %s, %s, %s, %s, %s)
-                    """, (
+                    statement_records.append((
                         session_id,
                         row.get('Date'),
                         str(row.get('Reference', ''))[:255],
@@ -255,12 +278,21 @@ class PostgreSQLDatabase:
                         str(row.get('Description', '')),
                         row.get('Currency', 'ZAR')
                     ))
-            
+
+                cursor.executemany("""
+                    INSERT INTO unmatched_transactions (
+                        session_id, source, transaction_date, reference, amount, description, currency
+                    )
+                    VALUES (%s, 'Statement', %s, %s, %s, %s, %s)
+                """, statement_records)
+                logger.info("Batch inserted %d unmatched statement transactions for session_id=%d", len(statement_records), session_id)
+
             self.conn.commit()
             return True
-            
+
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error saving unmatched transactions: %s", str(e))
             st.error(f"Error saving unmatched transactions: {str(e)}")
             return False
         finally:
@@ -290,6 +322,7 @@ class PostgreSQLDatabase:
             
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error completing session: %s", str(e))
             st.error(f"Error completing session: {str(e)}")
             return False
         finally:
@@ -325,5 +358,6 @@ class PostgreSQLDatabase:
                 return pd.read_sql(query, self.conn, params=(limit,))
                 
         except Exception as e:
+            logger.error("Error fetching session history: %s", str(e))
             st.error(f"Error fetching session history: {str(e)}")
             return pd.DataFrame()

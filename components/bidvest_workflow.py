@@ -6,6 +6,7 @@ Bidvest settlement reconciliation with two match types:
 2. Grouped Matches: Same date, same amount
 """
 
+import logging
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,6 +15,8 @@ from collections import defaultdict
 import sys
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -198,12 +201,12 @@ class BidvestWorkflow:
             
             with col1:
                 if st.session_state.bidvest_ledger is not None:
-                    if st.button("📊 View & Edit Ledger", key='bidvest_view_edit_ledger_btn', use_container_width=True, type="secondary"):
+                    if st.button("📊 View & Edit Ledger", key='bidvest_view_edit_ledger_btn', width="stretch", type="secondary"):
                         st.session_state.bidvest_show_ledger_editor = True
             
             with col2:
                 if st.session_state.bidvest_statement is not None:
-                    if st.button("📊 View & Edit Statement", key='bidvest_view_edit_statement_btn', use_container_width=True, type="secondary"):
+                    if st.button("📊 View & Edit Statement", key='bidvest_view_edit_statement_btn', width="stretch", type="secondary"):
                         st.session_state.bidvest_show_statement_editor = True
             
             # Show Ledger Editor
@@ -281,11 +284,11 @@ class BidvestWorkflow:
             
             with col2:
                 if not st.session_state.bidvest_reference_extracted:
-                    if st.button("✨ Extract References", type="primary", use_container_width=True, key="bidvest_extract_ref"):
+                    if st.button("✨ Extract References", type="primary", width="stretch", key="bidvest_extract_ref"):
                         self.execute_reference_extraction(comment_col)
                 else:
                     st.success("✅ References extracted!")
-                    if st.button("🔄 Re-extract", use_container_width=True, key="bidvest_reextract_ref"):
+                    if st.button("🔄 Re-extract", width="stretch", key="bidvest_reextract_ref"):
                         self.execute_reference_extraction(comment_col)
         else:
             st.warning("⚠️ No 'Comment' column found. Please ensure your ledger has a column named 'Comment' or 'B'.")
@@ -336,7 +339,7 @@ class BidvestWorkflow:
                             'Comment': ledger.iloc[i][comment_col],
                             'Extracted Reference': references[i]
                         })
-                    st.dataframe(pd.DataFrame(preview_data), use_container_width=True)
+                    st.dataframe(pd.DataFrame(preview_data), width="stretch")
                 
                 # Trigger rerun to refresh UI
                 st.rerun()
@@ -424,16 +427,16 @@ class BidvestWorkflow:
         col1, col2, col3 = st.columns([2, 1, 1])
 
         with col1:
-            if st.button("🚀 Start Reconciliation", type="primary", use_container_width=True, key="bidvest_start_recon"):
+            if st.button("🚀 Start Reconciliation", type="primary", width="stretch", key="bidvest_start_recon"):
                 self.run_reconciliation()
 
         with col2:
-            if st.button("🔄 Reset", use_container_width=True, key="bidvest_reset"):
+            if st.button("🔄 Reset", width="stretch", key="bidvest_reset"):
                 st.session_state.bidvest_results = None
                 st.rerun()
 
         with col3:
-            if st.button("❌ Clear All", use_container_width=True, key="bidvest_clear_all"):
+            if st.button("❌ Clear All", width="stretch", key="bidvest_clear_all"):
                 st.session_state.bidvest_ledger = None
                 st.session_state.bidvest_statement = None
                 st.session_state.bidvest_results = None
@@ -703,7 +706,7 @@ class BidvestWorkflow:
                     results['statement'],
                     st.session_state.bidvest_match_config
                 )
-                st.dataframe(exact_data, use_container_width=True)
+                st.dataframe(exact_data, width="stretch")
                 st.download_button(
                     "📥 Download 100% Exact Matches",
                     exact_data.to_csv(index=False),
@@ -722,7 +725,7 @@ class BidvestWorkflow:
                     results['statement'],
                     st.session_state.bidvest_match_config
                 )
-                st.dataframe(grouped_data, use_container_width=True)
+                st.dataframe(grouped_data, width="stretch")
                 st.download_button(
                     "📥 Download Grouped Matches",
                     grouped_data.to_csv(index=False),
@@ -740,7 +743,7 @@ class BidvestWorkflow:
             unmatched_ledger = unmatched_ledger.drop(columns=['__date', '__debit', '__credit'], errors='ignore')
 
             if not unmatched_ledger.empty:
-                st.dataframe(unmatched_ledger, use_container_width=True)
+                st.dataframe(unmatched_ledger, width="stretch")
                 st.download_button(
                     "📥 Download Unmatched Ledger",
                     unmatched_ledger.to_csv(index=False),
@@ -758,7 +761,7 @@ class BidvestWorkflow:
             unmatched_statement = unmatched_statement.drop(columns=['__date', '__amt'], errors='ignore')
 
             if not unmatched_statement.empty:
-                st.dataframe(unmatched_statement, use_container_width=True)
+                st.dataframe(unmatched_statement, width="stretch")
                 st.download_button(
                     "📥 Download Unmatched Statement",
                     unmatched_statement.to_csv(index=False),
@@ -778,7 +781,7 @@ class BidvestWorkflow:
         
         # Button to enter export mode
         if not st.session_state.bidvest_export_mode:
-            if st.button("📊 Export All Results to Excel", type="primary", use_container_width=True, key="bidvest_export_excel"):
+            if st.button("📊 Export All Results to Excel", type="primary", width="stretch", key="bidvest_export_excel"):
                 st.session_state.bidvest_export_mode = True
                 st.rerun()
         
@@ -824,7 +827,7 @@ class BidvestWorkflow:
             st.metric("Unmatched (Statement)", unmatched_statement_count)
 
         # Save button
-        if st.button("💾 Save to Database", type="primary", use_container_width=True, key="bidvest_save_to_db_btn"):
+        if st.button("💾 Save to Database", type="primary", width="stretch", key="bidvest_save_to_db_btn"):
             success = self.save_results_to_db(session_name, results)
             if success:
                 st.success("✅ Results saved successfully!")
@@ -1133,7 +1136,7 @@ class BidvestWorkflow:
                     data=output,
                     file_name=f"Bidvest_Reconciliation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    width="stretch"
                 )
 
             st.success("✅ Excel report ready for download!")

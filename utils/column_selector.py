@@ -49,7 +49,7 @@ class ColumnSelector:
         btn_col1, btn_col2, btn_col3, btn_col4, btn_col5 = st.columns(5)
         
         with btn_col1:
-            if st.button("✅ Select All Ledger", use_container_width=True, key=f"{workflow_name}_select_all_ledger"):
+            if st.button("✅ Select All Ledger", width="stretch", key=f"{workflow_name}_select_all_ledger"):
                 selection_dict = st.session_state[f'{workflow_name}_ledger_selection_dict']
                 # Add all ledger columns in their natural order
                 for col in ledger_cols:
@@ -59,11 +59,11 @@ class ColumnSelector:
                 st.session_state[f'{workflow_name}_ledger_selection_dict'] = selection_dict
         
         with btn_col2:
-            if st.button("❌ Deselect All Ledger", use_container_width=True, key=f"{workflow_name}_deselect_all_ledger"):
+            if st.button("❌ Deselect All Ledger", width="stretch", key=f"{workflow_name}_deselect_all_ledger"):
                 st.session_state[f'{workflow_name}_ledger_selection_dict'] = {}
         
         with btn_col3:
-            if st.button("✅ Select All Statement", use_container_width=True, key=f"{workflow_name}_select_all_statement"):
+            if st.button("✅ Select All Statement", width="stretch", key=f"{workflow_name}_select_all_statement"):
                 selection_dict = st.session_state[f'{workflow_name}_statement_selection_dict']
                 # Add all statement columns in their natural order
                 for col in statement_cols:
@@ -73,11 +73,11 @@ class ColumnSelector:
                 st.session_state[f'{workflow_name}_statement_selection_dict'] = selection_dict
         
         with btn_col4:
-            if st.button("❌ Deselect All Statement", use_container_width=True, key=f"{workflow_name}_deselect_all_statement"):
+            if st.button("❌ Deselect All Statement", width="stretch", key=f"{workflow_name}_deselect_all_statement"):
                 st.session_state[f'{workflow_name}_statement_selection_dict'] = {}
         
         with btn_col5:
-            if st.button("🔄 Reset All", use_container_width=True, key=f"{workflow_name}_reset_all_selections"):
+            if st.button("🔄 Reset All", width="stretch", key=f"{workflow_name}_reset_all_selections"):
                 st.session_state[f'{workflow_name}_ledger_selection_dict'] = {}
                 st.session_state[f'{workflow_name}_statement_selection_dict'] = {}
                 st.session_state[f'{workflow_name}_selection_counter'] = 0

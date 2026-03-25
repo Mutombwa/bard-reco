@@ -4,11 +4,14 @@ Advanced Data Editor Component for Streamlit
 Excel-like editing capabilities with paste support and advanced features
 """
 
+import logging
 import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import re
+
+logger = logging.getLogger(__name__)
 
 class DataEditor:
     """
@@ -36,7 +39,7 @@ class DataEditor:
         # Use Streamlit's built-in data editor
         edited_df = st.data_editor(
             self.df,
-            use_container_width=True,
+            width="stretch",
             num_rows="dynamic",
             key=f"editor_{self.data_type}",
             height=500,
@@ -58,7 +61,7 @@ class DataEditor:
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                if st.button("✅ Replace All Data", use_container_width=True):
+                if st.button("✅ Replace All Data", width="stretch"):
                     if paste_data:
                         parsed_df = self._parse_clipboard(paste_data)
                         if parsed_df is not None:
@@ -67,7 +70,7 @@ class DataEditor:
                             st.rerun()
 
             with col2:
-                if st.button("➕ Append Data", use_container_width=True):
+                if st.button("➕ Append Data", width="stretch"):
                     if paste_data:
                         parsed_df = self._parse_clipboard(paste_data)
                         if parsed_df is not None:
@@ -76,7 +79,7 @@ class DataEditor:
                             st.rerun()
 
             with col3:
-                if st.button("🔄 Clear Paste Area", use_container_width=True):
+                if st.button("🔄 Clear Paste Area", width="stretch"):
                     st.rerun()
 
         # Filter and search
@@ -92,7 +95,7 @@ class DataEditor:
                 if st.button("🔍 Apply Filter"):
                     if search_term:
                         filtered_df = self._filter_data(edited_df, search_column, search_term)
-                        st.dataframe(filtered_df, use_container_width=True)
+                        st.dataframe(filtered_df, width="stretch")
 
         # Statistics
         st.markdown("---")
@@ -116,11 +119,11 @@ class DataEditor:
         col1, col2, col3 = st.columns([2, 1, 1])
 
         with col2:
-            if st.button("💾 Save Changes", use_container_width=True, type="primary"):
+            if st.button("💾 Save Changes", width="stretch", type="primary"):
                 return edited_df
 
         with col3:
-            if st.button("❌ Cancel", use_container_width=True):
+            if st.button("❌ Cancel", width="stretch"):
                 return None
 
         return None
@@ -131,24 +134,24 @@ class DataEditor:
         cols = st.columns(6)
 
         with cols[0]:
-            if st.button("➕ Add Row", use_container_width=True):
+            if st.button("➕ Add Row", width="stretch"):
                 self._add_row()
 
         with cols[1]:
-            if st.button("➖ Delete Row", use_container_width=True):
+            if st.button("➖ Delete Row", width="stretch"):
                 st.info("Select rows in the editor and delete using Delete key")
 
         with cols[2]:
-            if st.button("➕ Add Column", use_container_width=True):
+            if st.button("➕ Add Column", width="stretch"):
                 st.session_state.show_add_column = True
 
         with cols[3]:
-            if st.button("🔄 Reset", use_container_width=True):
+            if st.button("🔄 Reset", width="stretch"):
                 self.df = self.original_df.copy()
                 st.rerun()
 
         with cols[4]:
-            if st.button("📥 Export CSV", use_container_width=True):
+            if st.button("📥 Export CSV", width="stretch"):
                 csv = self.df.to_csv(index=False)
                 st.download_button(
                     "Download CSV",
@@ -158,7 +161,7 @@ class DataEditor:
                 )
 
         with cols[5]:
-            if st.button("📊 Export Excel", use_container_width=True):
+            if st.button("📊 Export Excel", width="stretch"):
                 # Generate Excel file
                 from io import BytesIO
                 output = BytesIO()
@@ -283,7 +286,7 @@ class DataEditor:
                 if numeric_count > 0:
                     df[col] = pd.to_numeric(converted, errors='coerce').fillna(converted)
 
-            except Exception:
+            except (ValueError, TypeError, KeyError):
                 pass
 
             # Try date conversion
@@ -292,7 +295,7 @@ class DataEditor:
                     date_col = pd.to_datetime(df[col], errors='coerce')
                     if date_col.notna().sum() > len(df) * 0.5:  # More than 50% valid dates
                         df[col] = date_col
-            except Exception:
+            except (ValueError, TypeError, KeyError):
                 pass
 
         return df

@@ -6,12 +6,15 @@ Performance: ~1.4 seconds for 700+ matches
 Accuracy: 736 matched transactions (vs 10 in old engine)
 """
 
+import logging
 import pandas as pd
 import numpy as np
 import streamlit as st
 from typing import Dict, List, Tuple, Set, Any
 from datetime import datetime
 import time
+
+logger = logging.getLogger(__name__)
 
 try:
     from rapidfuzz import fuzz
@@ -103,7 +106,7 @@ class GUIReconciliationEngine:
                 # If all NaT (failed), try general parsing
                 if ledger[f'_normalized_{date_ledger}'].isna().all():
                     ledger[f'_normalized_{date_ledger}'] = pd.to_datetime(ledger[date_ledger], errors='coerce')
-            except:
+            except (ValueError, TypeError, KeyError):
                 ledger[f'_normalized_{date_ledger}'] = pd.to_datetime(ledger[date_ledger], errors='coerce')
 
         if date_statement in statement.columns:
@@ -113,14 +116,14 @@ class GUIReconciliationEngine:
             try:
                 # Try YYYYMMDD format first (e.g., 20251118)
                 statement[f'_normalized_{date_statement}'] = pd.to_datetime(
-                    statement[date_statement].astype(str), 
-                    format='%Y%m%d', 
+                    statement[date_statement].astype(str),
+                    format='%Y%m%d',
                     errors='coerce'
                 )
                 # If all NaT (failed), try general parsing
                 if statement[f'_normalized_{date_statement}'].isna().all():
                     statement[f'_normalized_{date_statement}'] = pd.to_datetime(statement[date_statement], errors='coerce')
-            except:
+            except (ValueError, TypeError, KeyError):
                 statement[f'_normalized_{date_statement}'] = pd.to_datetime(statement[date_statement], errors='coerce')
 
         # Clean reference columns - ensure they're strings
@@ -470,7 +473,7 @@ class GUIReconciliationEngine:
 
         try:
             score = int(fuzz.ratio(ref1_lower, ref2_lower))
-        except Exception:
+        except (ValueError, TypeError):
             score = 100 if ref1_lower == ref2_lower else 0
 
         self.fuzzy_cache[cache_key] = score

@@ -8,7 +8,31 @@ import streamlit as st
 import pandas as pd
 import io
 import hashlib
+import logging
 from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls'}
+MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100MB
+
+def validate_upload(file) -> tuple[bool, str]:
+    """Validate uploaded file before processing."""
+    if file is None:
+        return False, "No file provided"
+
+    # Check extension
+    name = getattr(file, 'name', '')
+    ext = '.' + name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+    if ext not in ALLOWED_EXTENSIONS:
+        return False, f"Unsupported file type '{ext}'. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+
+    # Check size
+    size = getattr(file, 'size', 0)
+    if size > MAX_FILE_SIZE_BYTES:
+        return False, f"File too large ({size / 1024 / 1024:.1f}MB). Maximum: {MAX_FILE_SIZE_BYTES / 1024 / 1024:.0f}MB"
+
+    return True, ""
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -93,7 +117,7 @@ def normalize_dataframe_types(df: pd.DataFrame) -> pd.DataFrame:
                             errors='coerce'
                         )
                         continue
-            except:
+            except (ValueError, TypeError):
                 pass
 
             # Default: ensure consistent string type

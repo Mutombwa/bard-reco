@@ -9,8 +9,11 @@ This allows:
 3. No code changes needed - just configure secrets
 """
 
+import logging
 import streamlit as st
 from typing import Optional, Dict, Tuple
+
+logger = logging.getLogger(__name__)
 
 class HybridAuthentication:
     """Hybrid authentication - Supabase first, local file fallback"""
@@ -30,7 +33,7 @@ class HybridAuthentication:
                 self.backend_type = "supabase"
                 # Don't show message here - will be shown in sidebar by app.py
                 return
-        except Exception:
+        except ImportError:
             pass  # Silent fallback to local
         
         # Fall back to local file storage

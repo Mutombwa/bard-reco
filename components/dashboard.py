@@ -5,6 +5,7 @@ Modern analytics dashboard with real-time metrics, session tracking,
 and historical batch management for all reconciliation workflows.
 """
 
+import logging
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -14,6 +15,8 @@ from typing import Optional, Dict, List, Any
 import json
 import os
 import sys
+
+logger = logging.getLogger(__name__)
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -289,7 +292,7 @@ class Dashboard:
                 legend=dict(orientation="h", yanchor="bottom", y=-0.2)
             )
             fig.update_traces(textposition='inside', textinfo='value+percent')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.markdown("""
             <div class="no-data-message">
@@ -333,7 +336,7 @@ class Dashboard:
                 legend=dict(orientation="h", yanchor="bottom", y=-0.2),
                 yaxis_title="Transactions"
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.markdown("""
             <div class="no-data-message">
@@ -413,7 +416,7 @@ class Dashboard:
 
         with col3:
             st.write("")  # Spacer
-            refresh = st.button("🔄 Refresh", key="hist_refresh", use_container_width=True)
+            refresh = st.button("🔄 Refresh", key="hist_refresh", width="stretch")
 
         # Get sessions
         sessions = self._get_sessions(
@@ -506,7 +509,7 @@ class Dashboard:
             with col4:
                 st.metric("Match Rate", f"{match_rate:.1f}%")
             with col5:
-                if st.button("📥 Download", key=f"dl_{session_id[:8]}", use_container_width=True):
+                if st.button("📥 Download", key=f"dl_{session_id[:8]}", width="stretch"):
                     st.session_state.download_session_id = session_id
                     st.session_state.dash_view = 'download'
 
@@ -564,15 +567,15 @@ class Dashboard:
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
-                    if st.button("📥 Download Matched", key="dl_matched_hist", use_container_width=True, type="primary"):
+                    if st.button("📥 Download Matched", key="dl_matched_hist", width="stretch", type="primary"):
                         self._download_session_data(session_id, 'matched')
 
                 with col2:
-                    if st.button("📥 Download Unmatched", key="dl_unmatched_hist", use_container_width=True):
+                    if st.button("📥 Download Unmatched", key="dl_unmatched_hist", width="stretch"):
                         self._download_session_data(session_id, 'unmatched')
 
                 with col3:
-                    if st.button("📥 Download All", key="dl_all_hist", use_container_width=True):
+                    if st.button("📥 Download All", key="dl_all_hist", width="stretch"):
                         self._download_session_data(session_id, 'all')
         else:
             st.info("📭 No historical sessions available. Save a reconciliation result to enable downloads.")
@@ -606,7 +609,7 @@ class Dashboard:
                     f"{workflow_name}_matched_{datetime.now().strftime('%Y%m%d')}.csv",
                     "text/csv",
                     key=f"dl_matched_{workflow_name}",
-                    use_container_width=True
+                    width="stretch"
                 )
 
         with col2:
@@ -632,7 +635,7 @@ class Dashboard:
                     f"{workflow_name}_unmatched_{datetime.now().strftime('%Y%m%d')}.csv",
                     "text/csv",
                     key=f"dl_unmatched_{workflow_name}",
-                    use_container_width=True
+                    width="stretch"
                 )
 
     def _download_session_data(self, session_id: str, data_type: str):
@@ -702,7 +705,7 @@ class Dashboard:
                 dt = datetime.fromisoformat(dt_value.replace("Z", "+00:00"))
                 return dt.strftime("%Y-%m-%d %H:%M")
             return str(dt_value)
-        except:
+        except (ValueError, TypeError, KeyError):
             return str(dt_value)
 
 

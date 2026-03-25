@@ -36,10 +36,13 @@ Setup Instructions:
 
 import streamlit as st
 import hashlib
+import logging
 import os
 from datetime import datetime
 from typing import Optional, Dict, Tuple
 from werkzeug.security import generate_password_hash, check_password_hash
+
+logger = logging.getLogger(__name__)
 
 class SupabaseAuthentication:
     """Supabase-backed authentication system"""
@@ -74,7 +77,8 @@ class SupabaseAuthentication:
         except ImportError:
             self.enabled = False
             # Don't show error here - handled by hybrid_auth
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Supabase auth initialization failed: {e}")
             self.enabled = False
             # Don't show error here - handled by hybrid_auth
 
@@ -100,7 +104,7 @@ class SupabaseAuthentication:
             return check_password_hash(stored_hash, password)
 
         except Exception as e:
-            print(f"Password verification error: {e}")
+            logger.error(f"Password verification error: {e}")
             return False
 
     def _is_email_allowed(self, email: str) -> bool:
@@ -125,8 +129,8 @@ class SupabaseAuthentication:
                     'role': 'admin'
                 }).execute()
 
-        except Exception:
-            pass  # Silently fail - admin may already exist or table not ready
+        except Exception as e:
+            logger.warning(f"Default admin creation skipped: {e}")
 
     def register(self, username: str, password: str, email: str = '', full_name: str = '') -> Tuple[bool, str]:
         """
@@ -210,8 +214,8 @@ class SupabaseAuthentication:
                     self.supabase.table('users').update({
                         'last_login': datetime.now().isoformat()
                     }).eq('username', username).execute()
-                except:
-                    pass  # Column may not exist
+                except Exception as e:
+                    logger.warning(f"Could not update last_login: {e}")
 
                 return True
 

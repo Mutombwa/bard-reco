@@ -1,0 +1,16 @@
+# Ruff linter configuration for BARD-RECO
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "E402",  # module level import not at top (Streamlit patterns)
+    "F401",  # imported but unused (common in __init__.py)
+    "F841",  # local variable assigned but never used
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["E", "F"]
+"src/gui.py" = ["E", "F", "W"]  # Legacy file, skip

@@ -128,7 +128,7 @@ class FixLedgerWorkflow:
                 with st.expander("📋 View Columns"):
                     st.code(", ".join(st.session_state.fix_ledger_palladium.columns))
                 with st.expander("👁️ Preview Data (first 5 rows)"):
-                    st.dataframe(st.session_state.fix_ledger_palladium.head(), use_container_width=True)
+                    st.dataframe(st.session_state.fix_ledger_palladium.head(), width="stretch")
 
             palladium_file = st.file_uploader(
                 "Upload Palladium Ledger",
@@ -162,7 +162,7 @@ class FixLedgerWorkflow:
                 with st.expander("📋 View Columns"):
                     st.code(", ".join(st.session_state.fix_ledger_tx_report.columns))
                 with st.expander("👁️ Preview Data (first 5 rows)"):
-                    st.dataframe(st.session_state.fix_ledger_tx_report.head(), use_container_width=True)
+                    st.dataframe(st.session_state.fix_ledger_tx_report.head(), width="stretch")
 
             tx_file = st.file_uploader(
                 "Upload TX Report",
@@ -191,7 +191,7 @@ class FixLedgerWorkflow:
             st.markdown("---")
             col1, col2, col3 = st.columns([1, 1, 2])
             with col1:
-                if st.button("🗑️ Clear Palladium", use_container_width=True):
+                if st.button("🗑️ Clear Palladium", width="stretch"):
                     st.session_state.fix_ledger_palladium = None
                     st.session_state.fix_ledger_results = None
                     st.session_state.fix_ledger_enriched = None
@@ -199,7 +199,7 @@ class FixLedgerWorkflow:
                         del st.session_state.fix_ledger_palladium_hash
                     st.rerun()
             with col2:
-                if st.button("🗑️ Clear TX Report", use_container_width=True):
+                if st.button("🗑️ Clear TX Report", width="stretch"):
                     st.session_state.fix_ledger_tx_report = None
                     st.session_state.fix_ledger_results = None
                     st.session_state.fix_ledger_enriched = None
@@ -318,13 +318,13 @@ class FixLedgerWorkflow:
         with st.expander("🔍 View Sample Extractions (first 20 rows)", expanded=True):
             preview_df = palladium_df[[comment_col, 'TX_REF']].head(20).copy()
             preview_df.columns = ['Original Comment', 'Extracted TX_REF']
-            st.dataframe(preview_df, use_container_width=True)
+            st.dataframe(preview_df, width="stretch")
 
         # Show rows without references
         if not_extracted > 0:
             with st.expander(f"⚠️ Rows Without References ({not_extracted} rows)"):
                 no_ref_df = palladium_df[palladium_df['TX_REF'] == ''][[comment_col]].head(20)
-                st.dataframe(no_ref_df, use_container_width=True)
+                st.dataframe(no_ref_df, width="stretch")
                 if not_extracted > 20:
                     st.caption(f"Showing first 20 of {not_extracted} rows without references")
 
@@ -431,7 +431,7 @@ class FixLedgerWorkflow:
 
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🔗 Match & Enrich Ledger", use_container_width=True, type="primary"):
+            if st.button("🔗 Match & Enrich Ledger", width="stretch", type="primary"):
                 with st.spinner("⚡ Matching transactions..."):
                     start_time = datetime.now()
                     results = self.run_matching()
@@ -503,7 +503,7 @@ class FixLedgerWorkflow:
                 # Add other columns from original data
                 other_cols = [c for c in results['matched_df'].columns if c not in display_cols]
                 display_df = results['matched_df'][display_cols + other_cols[:5]]  # Limit extra cols for display
-                st.dataframe(display_df, use_container_width=True, height=400)
+                st.dataframe(display_df, width="stretch", height=400)
             else:
                 st.warning("No matches found")
 
@@ -511,7 +511,7 @@ class FixLedgerWorkflow:
             if not results['side_by_side_df'].empty:
                 st.markdown("**Side-by-Side View** - Palladium Ledger (green) | TX Report (blue)")
                 st.caption("Matched transactions shown with corresponding TX Report data")
-                st.dataframe(results['side_by_side_df'], use_container_width=True, height=400)
+                st.dataframe(results['side_by_side_df'], width="stretch", height=400)
             else:
                 st.warning("No matched transactions for side-by-side view")
 
@@ -525,13 +525,13 @@ class FixLedgerWorkflow:
                 with col2:
                     st.metric("📝 No Reference in Comment", results['no_ref_count'])
 
-                st.dataframe(results['all_unmatched_df'], use_container_width=True, height=400)
+                st.dataframe(results['all_unmatched_df'], width="stretch", height=400)
             else:
                 st.success("✅ All transactions were matched!")
 
         with tab4:
             st.markdown("**Complete Enriched Palladium Ledger** - All original columns + TX_REF + Source Payment Reference")
-            st.dataframe(results['enriched_df'], use_container_width=True, height=400)
+            st.dataframe(results['enriched_df'], width="stretch", height=400)
 
         with tab5:
             self.render_download_section(results)
@@ -569,7 +569,7 @@ class FixLedgerWorkflow:
                 data=output,
                 file_name=f"enriched_palladium_ledger_{timestamp}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width="stretch"
             )
 
         with col2:
@@ -649,7 +649,7 @@ class FixLedgerWorkflow:
                 data=report_output,
                 file_name=f"matching_report_{timestamp}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width="stretch"
             )
 
         # CSV options
@@ -665,7 +665,7 @@ class FixLedgerWorkflow:
                 data=csv_enriched,
                 file_name=f"enriched_ledger_{timestamp}.csv",
                 mime="text/csv",
-                use_container_width=True
+                width="stretch"
             )
 
         with col2:
@@ -676,7 +676,7 @@ class FixLedgerWorkflow:
                     data=csv_matched,
                     file_name=f"matched_{timestamp}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width="stretch"
                 )
 
         with col3:
@@ -687,7 +687,7 @@ class FixLedgerWorkflow:
                     data=csv_unmatched,
                     file_name=f"unmatched_{timestamp}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width="stretch"
                 )
 
 

@@ -217,7 +217,7 @@ def post_fnb_results_fast(workflow_instance, results: Dict = None) -> Tuple[bool
     """
     Fast posting for FNB workflow
 
-    Usage in enhanced_fnb_workflow.py:
+    Usage in fnb_workflow.py:
         Replace the post_to_collaborative_dashboard method with this:
 
         def post_to_collaborative_dashboard(self):

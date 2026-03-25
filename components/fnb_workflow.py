@@ -5,6 +5,7 @@ Advanced reconciliation engine with weighted scoring matching
 Date (30%) + Reference (40%) + Amount (30%) = Total Score
 """
 
+import logging
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,6 +13,8 @@ from datetime import datetime, timedelta
 from fuzzywuzzy import fuzz
 import sys
 import os
+
+logger = logging.getLogger(__name__)
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -213,12 +216,12 @@ class FNBWorkflow:
             
             with col1:
                 if st.session_state.fnb_ledger is not None:
-                    if st.button("📊 View & Edit Ledger", key='view_edit_ledger_btn', use_container_width=True, type="secondary"):
+                    if st.button("📊 View & Edit Ledger", key='view_edit_ledger_btn', width="stretch", type="secondary"):
                         st.session_state.fnb_show_ledger_editor = True
             
             with col2:
                 if st.session_state.fnb_statement is not None:
-                    if st.button("📊 View & Edit Statement", key='view_edit_statement_btn', use_container_width=True, type="secondary"):
+                    if st.button("📊 View & Edit Statement", key='view_edit_statement_btn', width="stretch", type="secondary"):
                         st.session_state.fnb_show_statement_editor = True
             
             # Show Ledger Editor
@@ -280,7 +283,7 @@ class FNBWorkflow:
             st.caption("Extract names from Statement Description")
             if 'Reference' in statement_cols:
                 st.success("✅ Reference added to Statement")
-            if st.button("🚀 Launch", key='add_reference_btn', use_container_width=True):
+            if st.button("🚀 Launch", key='add_reference_btn', width="stretch"):
                 self.add_reference_tool()
 
         with col2:
@@ -288,7 +291,7 @@ class FNBWorkflow:
             st.caption("Process Nedbank statement")
             if 'Processed_Ref' in statement_cols:
                 st.success("✅ Processed_Ref added")
-            if st.button("🚀 Launch", key='nedbank_ref_btn', use_container_width=True):
+            if st.button("🚀 Launch", key='nedbank_ref_btn', width="stretch"):
                 self.nedbank_processing_tool()
 
         with col3:
@@ -296,7 +299,7 @@ class FNBWorkflow:
             st.caption("Generate RJ numbers")
             if 'RJ-Number' in ledger_cols and 'Payment Ref' in ledger_cols:
                 st.success("✅ RJ-Number & Payment Ref added")
-            if st.button("🚀 Launch", key='rj_payment_ref_btn', use_container_width=True):
+            if st.button("🚀 Launch", key='rj_payment_ref_btn', width="stretch"):
                 self.rj_payment_ref_tool()
 
     def add_reference_tool(self):
@@ -424,7 +427,7 @@ class FNBWorkflow:
                                 if re.match(r'^[A-Za-z\s]+\s+\d{10,}$', result):
                                     result = re.sub(r'\s*\d{10,}$', '', result)
                                 return result
-                        except Exception:
+                        except (ValueError, TypeError, KeyError):
                             continue
 
                 # Fallback: For ADT CASH DEPO, try to extract last word(s) as reference
@@ -509,7 +512,7 @@ class FNBWorkflow:
                         'Description': statement.iloc[i][desc_col],
                         'Extracted Reference': references[i]
                     })
-                st.dataframe(pd.DataFrame(sample_data), use_container_width=True)
+                st.dataframe(pd.DataFrame(sample_data), width="stretch")
 
             # Rerun to update UI with new columns
             st.rerun()
@@ -562,7 +565,7 @@ class FNBWorkflow:
                                 result = extractor(match)
                                 if result:
                                     return result.strip()
-                            except Exception:
+                            except (ValueError, TypeError, KeyError):
                                 continue
 
                     # Fallback: return original description stripped
@@ -584,7 +587,7 @@ class FNBWorkflow:
                 # Show sample extractions
                 with st.expander("📋 Sample Extractions (First 10)"):
                     sample_df = statement[['Description', 'Processed_Ref']].head(10)
-                    st.dataframe(sample_df, use_container_width=True)
+                    st.dataframe(sample_df, width="stretch")
 
                 # Rerun to update UI with new columns
                 st.rerun()
@@ -700,7 +703,7 @@ class FNBWorkflow:
                 del st.session_state.fnb_saved_selections
 
             st.success("✅ Added RJ-Number and Payment Ref columns to ledger")
-            st.dataframe(ledger[['RJ-Number', 'Payment Ref']].head(10), use_container_width=True)
+            st.dataframe(ledger[['RJ-Number', 'Payment Ref']].head(10), width="stretch")
 
             # Rerun to update UI with new columns
             st.rerun()
@@ -922,17 +925,17 @@ class FNBWorkflow:
         col1, col2, col3 = st.columns([2, 1, 1])
 
         with col1:
-            if st.button("🚀 Start Reconciliation", type="primary", use_container_width=True, key="fnb_start_recon"):
+            if st.button("🚀 Start Reconciliation", type="primary", width="stretch", key="fnb_start_recon"):
                 self.run_reconciliation()
 
         with col2:
-            if st.button("🔄 Reset", use_container_width=True, key="fnb_reset"):
+            if st.button("🔄 Reset", width="stretch", key="fnb_reset"):
                 st.session_state.fnb_results = None
                 # Keep st.rerun() for explicit reset action
                 st.rerun()
 
         with col3:
-            if st.button("❌ Clear All", use_container_width=True, key="fnb_clear_all"):
+            if st.button("❌ Clear All", width="stretch", key="fnb_clear_all"):
                 st.session_state.fnb_ledger = None
                 st.session_state.fnb_statement = None
                 st.session_state.fnb_results = None
@@ -1212,7 +1215,7 @@ class FNBWorkflow:
             else:
                 return 0.0
 
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
     def calculate_reference_score(self, ledger_row, stmt_row, settings):
@@ -1239,7 +1242,7 @@ class FNBWorkflow:
                 # Exact match only - return None if not exact match (don't allow partial)
                 return 1.0 if ledger_ref == stmt_ref else None
 
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
     def calculate_amount_score(self, ledger_row, stmt_row):
@@ -1276,7 +1279,7 @@ class FNBWorkflow:
             else:
                 return 0.0
 
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
     def process_results(self, ledger, statement, matches, settings):
@@ -1476,7 +1479,7 @@ class FNBWorkflow:
                     showlegend=True,
                     margin=dict(t=0, b=0, l=0, r=0)
                 )
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width="stretch")
             else:
                 st.info("No reconciliation data yet. Run a reconciliation to see match distribution.")
         
@@ -1506,7 +1509,7 @@ class FNBWorkflow:
                 showlegend=False,
                 margin=dict(t=0, b=0, l=0, r=0)
             )
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width="stretch")
 
         # Success Rate Gauge
         total_items = total_matched + split_count + unmatched_ledger_count + unmatched_statement_count
@@ -1540,7 +1543,7 @@ class FNBWorkflow:
                 }
             ))
             fig_gauge.update_layout(height=300, margin=dict(t=0, b=0, l=0, r=0))
-            st.plotly_chart(fig_gauge, use_container_width=True)
+            st.plotly_chart(fig_gauge, width="stretch")
 
         # CATEGORY NAVIGATION BUTTONS (Like localhost dashboard)
         st.markdown("---")
@@ -1554,37 +1557,37 @@ class FNBWorkflow:
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            if st.button("✅ Matched", use_container_width=True,
+            if st.button("✅ Matched", width="stretch",
                         type="primary" if st.session_state.fnb_selected_category == 'matched' else "secondary",
                         key='btn_matched'):
                 st.session_state.fnb_selected_category = 'matched'
-            if st.button("🔀 Split Transactions", use_container_width=True,
+            if st.button("🔀 Split Transactions", width="stretch",
                         type="primary" if st.session_state.fnb_selected_category == 'split' else "secondary",
                         key='btn_split'):
                 st.session_state.fnb_selected_category = 'split'
 
         with col2:
-            if st.button("📊 All Transactions", use_container_width=True,
+            if st.button("📊 All Transactions", width="stretch",
                         type="primary" if st.session_state.fnb_selected_category == 'all' else "secondary",
                         key='btn_all'):
                 st.session_state.fnb_selected_category = 'all'
-            if st.button("💜 Balanced By Fuzzy", use_container_width=True,
+            if st.button("💜 Balanced By Fuzzy", width="stretch",
                         type="primary" if st.session_state.fnb_selected_category == 'fuzzy' else "secondary",
                         key='btn_fuzzy'):
                 st.session_state.fnb_selected_category = 'fuzzy'
 
         with col3:
-            if st.button("❌ Unmatched Ledger", use_container_width=True,
+            if st.button("❌ Unmatched Ledger", width="stretch",
                         type="primary" if st.session_state.fnb_selected_category == 'unmatched_ledger' else "secondary",
                         key='btn_unmatched_ledger'):
                 st.session_state.fnb_selected_category = 'unmatched_ledger'
-            if st.button("💎 Foreign Credits", use_container_width=True,
+            if st.button("💎 Foreign Credits", width="stretch",
                         type="primary" if st.session_state.fnb_selected_category == 'foreign' else "secondary",
                         key='btn_foreign'):
                 st.session_state.fnb_selected_category = 'foreign'
 
         with col4:
-            if st.button("⚠️ Unmatched Statement", use_container_width=True,
+            if st.button("⚠️ Unmatched Statement", width="stretch",
                         type="primary" if st.session_state.fnb_selected_category == 'unmatched_statement' else "secondary",
                         key='btn_unmatched_stmt'):
                 st.session_state.fnb_selected_category = 'unmatched_statement'
@@ -1596,20 +1599,20 @@ class FNBWorkflow:
         st.markdown("### 🛠️ Data Tools")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            if st.button("🔍 Filter Results", use_container_width=True, key='filter_results_btn'):
+            if st.button("🔍 Filter Results", width="stretch", key='filter_results_btn'):
                 st.session_state.show_filter = not st.session_state.get('show_filter', False)
         with col2:
-            if st.button("✏️ Edit Mode", use_container_width=True, key='edit_mode_btn'):
+            if st.button("✏️ Edit Mode", width="stretch", key='edit_mode_btn'):
                 st.session_state.edit_mode = not st.session_state.get('edit_mode', False)
                 if st.session_state.edit_mode:
                     st.info("✏️ Edit mode enabled - Click on transactions to modify")
         with col3:
-            if st.button("↻ Refresh", use_container_width=True, key='refresh_btn'):
+            if st.button("↻ Refresh", width="stretch", key='refresh_btn'):
                 self.log_audit_trail("REFRESH_DATA", {})
                 # Keep st.rerun() for explicit user refresh action
                 st.rerun()
         with col4:
-            if st.button("📋 Audit Log", use_container_width=True, key='audit_btn'):
+            if st.button("📋 Audit Log", width="stretch", key='audit_btn'):
                 st.session_state.show_audit = not st.session_state.get('show_audit', False)
         
         # Show audit log if requested
@@ -1618,7 +1621,7 @@ class FNBWorkflow:
                 audit_trail = st.session_state.get('audit_trail', [])
                 if audit_trail:
                     audit_df = pd.DataFrame(audit_trail)
-                    st.dataframe(audit_df, use_container_width=True, height=200)
+                    st.dataframe(audit_df, width="stretch", height=200)
                 else:
                     st.info("No audit entries yet")
         
@@ -1643,7 +1646,7 @@ class FNBWorkflow:
                 if 'matched' in results and not results['matched'].empty:
                     perfect = results['matched'][results['matched']['Match_Type'] == 'Perfect']
                     if not perfect.empty:
-                        st.dataframe(perfect, use_container_width=True)
+                        st.dataframe(perfect, width="stretch")
                         st.download_button(
                             "📥 Download Perfect Matches",
                             perfect.to_csv(index=False),
@@ -1661,7 +1664,7 @@ class FNBWorkflow:
                 if 'matched' in results and not results['matched'].empty:
                     fuzzy = results['matched'][results['matched']['Match_Type'] == 'Fuzzy']
                     if not fuzzy.empty:
-                        st.dataframe(fuzzy, use_container_width=True)
+                        st.dataframe(fuzzy, width="stretch")
                         st.download_button(
                             "📥 Download Fuzzy Matches",
                             fuzzy.to_csv(index=False),
@@ -1679,7 +1682,7 @@ class FNBWorkflow:
                 if 'matched' in results and not results['matched'].empty:
                     foreign = results['matched'][results['matched']['Match_Type'] == 'Foreign_Credit']
                     if not foreign.empty:
-                        st.dataframe(foreign, use_container_width=True)
+                        st.dataframe(foreign, width="stretch")
                         st.download_button(
                             "📥 Download Foreign Credits",
                             foreign.to_csv(index=False),
@@ -1731,7 +1734,7 @@ class FNBWorkflow:
                                     stmt_row = statement.loc[[stmt_idx]].copy()
                                     # Remove normalized columns
                                     display_cols = [col for col in stmt_row.columns if not col.startswith('_')]
-                                    st.dataframe(stmt_row[display_cols], use_container_width=True, hide_index=True)
+                                    st.dataframe(stmt_row[display_cols], width="stretch", hide_index=True)
                                     st.markdown("")
                                 
                                 # Ledger transactions (components)
@@ -1741,7 +1744,7 @@ class FNBWorkflow:
                                     ledger_rows = ledger.loc[ledger_indices].copy()
                                     # Remove normalized columns
                                     display_cols = [col for col in ledger_rows.columns if not col.startswith('_')]
-                                    st.dataframe(ledger_rows[display_cols], use_container_width=True, hide_index=True)
+                                    st.dataframe(ledger_rows[display_cols], width="stretch", hide_index=True)
                             
                             elif split_type == 'one_to_many':
                                 # Ledger transaction (target)
@@ -1751,7 +1754,7 @@ class FNBWorkflow:
                                     ledger_row = ledger.loc[[ledger_idx]].copy()
                                     # Remove normalized columns
                                     display_cols = [col for col in ledger_row.columns if not col.startswith('_')]
-                                    st.dataframe(ledger_row[display_cols], use_container_width=True, hide_index=True)
+                                    st.dataframe(ledger_row[display_cols], width="stretch", hide_index=True)
                                     st.markdown("")
                                 
                                 # Statement transactions (components)
@@ -1761,7 +1764,7 @@ class FNBWorkflow:
                                     stmt_rows = statement.loc[stmt_indices].copy()
                                     # Remove normalized columns
                                     display_cols = [col for col in stmt_rows.columns if not col.startswith('_')]
-                                    st.dataframe(stmt_rows[display_cols], use_container_width=True, hide_index=True)
+                                    st.dataframe(stmt_rows[display_cols], width="stretch", hide_index=True)
                 else:
                     st.success("✅ No split transactions found - All transactions matched individually")
 
@@ -1773,7 +1776,7 @@ class FNBWorkflow:
                     unmatched_ledger = unmatched_ledger.fillna('')
                     
                     st.warning(f"⚠️ Found {len(unmatched_ledger)} unmatched ledger item(s)")
-                    st.dataframe(unmatched_ledger, use_container_width=True, height=400)
+                    st.dataframe(unmatched_ledger, width="stretch", height=400)
                     
                     col1, col2 = st.columns(2)
                     with col1:
@@ -1798,7 +1801,7 @@ class FNBWorkflow:
                     unmatched_statement = unmatched_statement.fillna('')
                     
                     st.warning(f"⚠️ Found {len(unmatched_statement)} unmatched statement item(s)")
-                    st.dataframe(unmatched_statement, use_container_width=True, height=400)
+                    st.dataframe(unmatched_statement, width="stretch", height=400)
                     
                     col1, col2 = st.columns(2)
                     with col1:
@@ -1818,7 +1821,7 @@ class FNBWorkflow:
             # Tab 6: All Matched (Combined view)
             with tabs[6]:
                 if 'matched' in results and not results['matched'].empty:
-                    st.dataframe(results['matched'], use_container_width=True)
+                    st.dataframe(results['matched'], width="stretch")
                     st.download_button(
                         "📥 Download All Matched",
                         results['matched'].to_csv(index=False),
@@ -1834,7 +1837,7 @@ class FNBWorkflow:
         col_a, col_b = st.columns(2)
 
         with col_a:
-            if st.button("💾 Save Results to Database", type="primary", use_container_width=True, key="fnb_save_db"):
+            if st.button("💾 Save Results to Database", type="primary", width="stretch", key="fnb_save_db"):
                 self.save_results_to_db(results)
 
         with col_b:
@@ -1844,7 +1847,7 @@ class FNBWorkflow:
             
             # Button to enter export mode
             if not st.session_state.fnb_export_mode:
-                if st.button("📊 Export All to Excel", type="primary", use_container_width=True, key="fnb_export_excel"):
+                if st.button("📊 Export All to Excel", type="primary", width="stretch", key="fnb_export_excel"):
                     st.session_state.fnb_export_mode = True
         
         # Show export UI when in export mode (outside columns)
@@ -1917,11 +1920,12 @@ class FNBWorkflow:
                             # Try to convert to datetime and format
                             if isinstance(value, (int, float)):
                                 # Handle Excel serial dates or timestamps
-                                value = pd.to_datetime(value, unit='D', origin='1899-12-30', errors='ignore')
-                            value = pd.to_datetime(value, errors='ignore')
+                                value = pd.to_datetime(value, unit='D', origin='1899-12-30')
+                            else:
+                                value = pd.to_datetime(value)
                             if isinstance(value, pd.Timestamp):
                                 value = value.strftime('%Y-%m-%d')
-                        except:
+                        except (ValueError, TypeError):
                             pass  # Keep original value if conversion fails
                     # Convert pandas NA/NaN to empty string
                     if pd.isna(value):
@@ -2198,7 +2202,7 @@ class FNBWorkflow:
                     data=csv_string,
                     file_name=f"FNB_Reconciliation_Batched_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width="stretch"
                 )
 
             st.success("✅ Batched CSV report ready for download! Organized like GUI export with separators.")
@@ -2433,7 +2437,7 @@ class FNBWorkflow:
                     split_df = pd.DataFrame(all_split_rows)
                     
                     # Display in Excel-like format (same as matched transactions)
-                    st.dataframe(split_df, use_container_width=True, height=600)
+                    st.dataframe(split_df, width="stretch", height=600)
                     
                     # Download button
                     st.download_button(
@@ -2484,7 +2488,7 @@ class FNBWorkflow:
             st.markdown(f"### {category_title}")
             st.info(f"📊 Found {len(category_data)} transaction(s)")
 
-            st.dataframe(category_data, use_container_width=True, height=400)
+            st.dataframe(category_data, width="stretch", height=400)
 
             # Download button
             st.download_button(

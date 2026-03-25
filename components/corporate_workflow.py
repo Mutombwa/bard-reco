@@ -12,6 +12,7 @@ Key Optimizations:
 - Efficient memory usage
 """
 
+import logging
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,6 +22,8 @@ import time
 import re
 import sys
 import os
+
+logger = logging.getLogger(__name__)
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -220,6 +223,10 @@ class CorporateWorkflow:
 
                     load_time = time.time() - start_time
 
+                    # Sanitize object columns: fill NaN with empty string to prevent Arrow serialization errors
+                    for col in df.select_dtypes(include=['object']).columns:
+                        df[col] = df[col].fillna('').astype(str)
+
                     st.session_state.corporate_data = df
                     st.session_state.corporate_df = df
                     st.session_state.corporate_file_id = file_id
@@ -237,7 +244,7 @@ class CorporateWorkflow:
                 with st.expander("👁️ Preview Data"):
                     preview_df = st.session_state.corporate_df
                     st.info(f"Current columns: {', '.join(str(col) for col in preview_df.columns.tolist())}")
-                    st.dataframe(preview_df.head(20), use_container_width=True)
+                    st.dataframe(preview_df.head(20), width="stretch")
 
                 st.markdown("---")
                 st.markdown("### 🔍 Extract References from Comment Column")
@@ -279,14 +286,14 @@ class CorporateWorkflow:
                         test = pd.to_numeric(working_df[debit_col].head(100), errors='coerce')
                         if test.isna().sum() > 50:  # More than 50% failed
                             validation_errors.append(f"⚠️ '{debit_col}' may not contain valid numeric data")
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 if validation_errors:
                     for error in validation_errors:
                         st.warning(error)
 
-                if st.button("🚀 Run ULTRA-FAST Reconciliation", type="primary", use_container_width=True):
+                if st.button("🚀 Run ULTRA-FAST Reconciliation", type="primary", width="stretch"):
                     if not columns_valid:
                         st.error("❌ Please fix column selection errors before running reconciliation")
                     else:
@@ -735,7 +742,7 @@ class CorporateWorkflow:
         col1, col2, col3 = st.columns([1, 2, 1])
 
         with col1:
-            if st.button("🔍 Extract References", type="primary", use_container_width=True):
+            if st.button("🔍 Extract References", type="primary", width="stretch"):
                 self.execute_reference_extraction()
 
         with col2:
@@ -744,7 +751,7 @@ class CorporateWorkflow:
 
         with col3:
             if st.session_state.corporate_reference_extracted:
-                if st.button("👁️ View Data", type="secondary", use_container_width=True):
+                if st.button("👁️ View Data", type="secondary", width="stretch"):
                     st.session_state.show_extracted_data = True
 
     @staticmethod
@@ -860,7 +867,7 @@ class CorporateWorkflow:
             st.metric("Extraction Rate", f"{rate:.1f}%")
 
         cols = ['Reference'] + [col for col in df.columns if str(col) != 'Reference']
-        st.dataframe(df[cols], use_container_width=True, height=400)
+        st.dataframe(df[cols], width="stretch", height=400)
 
         if st.button("🔼 Hide Data View"):
             st.session_state.show_extracted_data = False
@@ -921,12 +928,12 @@ class CorporateWorkflow:
                 excel_data = output.getvalue()
                 st.download_button("📊 Download Excel", excel_data, "corporate_results.xlsx",
                                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 use_container_width=True)
+                                 width="stretch")
 
             with col_exp2:
                 csv_data = combined_df.to_csv(index=False).encode('utf-8')
                 st.download_button("📄 Download CSV", csv_data, "corporate_results.csv", "text/csv",
-                                 use_container_width=True)
+                                 width="stretch")
         else:
             st.warning("No data to export")
 
@@ -955,7 +962,7 @@ class CorporateWorkflow:
                 st.markdown(f"**{batch_title}** - {len(batch_df):,} transactions")
                 if not batch_df.empty:
                     display_df = batch_df.drop(columns=[c for c in batch_df.columns if isinstance(c, str) and c.startswith('_')], errors='ignore')
-                    st.dataframe(display_df, use_container_width=True, height=200)
+                    st.dataframe(display_df, width="stretch", height=200)
                 else:
                     st.caption("No transactions in this batch")
                 st.markdown("---")
@@ -995,7 +1002,7 @@ class CorporateWorkflow:
             st.metric("Unmatched (Batch 6)", unmatched_count)
 
         # Save button
-        if st.button("💾 Save to Database", type="primary", use_container_width=True, key="corporate_save_to_db_btn"):
+        if st.button("💾 Save to Database", type="primary", width="stretch", key="corporate_save_to_db_btn"):
             success = self.save_results_to_db(session_name, results, stats)
             if success:
                 st.success("✅ Results saved successfully!")

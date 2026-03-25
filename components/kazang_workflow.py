@@ -13,6 +13,7 @@ Key Differences from FNB:
 - Format: "Reversal: ECO117918890: Eco 6456318627" → Payment Ref = "Eco"
 """
 
+import logging
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,6 +22,8 @@ from fuzzywuzzy import fuzz
 import sys
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -220,12 +223,12 @@ class KazangWorkflow:
             
             with col1:
                 if st.session_state.kazang_ledger is not None:
-                    if st.button("📊 View & Edit Ledger", key='kazang_view_edit_ledger_btn', use_container_width=True, type="secondary"):
+                    if st.button("📊 View & Edit Ledger", key='kazang_view_edit_ledger_btn', width="stretch", type="secondary"):
                         st.session_state.kazang_show_ledger_editor = True
             
             with col2:
                 if st.session_state.kazang_statement is not None:
-                    if st.button("📊 View & Edit Statement", key='kazang_view_edit_statement_btn', use_container_width=True, type="secondary"):
+                    if st.button("📊 View & Edit Statement", key='kazang_view_edit_statement_btn', width="stretch", type="secondary"):
                         st.session_state.kazang_show_statement_editor = True
             
             # Show Ledger Editor
@@ -283,7 +286,7 @@ class KazangWorkflow:
             st.caption("Format: 'Ref #RJ58822828410. - Gugu 6408370691' → 'Gugu'")
             if 'Payment Ref' in ledger_cols:
                 st.success("✅ Payment Ref column added to Ledger")
-            if st.button("🚀 Extract Payment Ref", key='kazang_extract_payment_ref_btn', use_container_width=True):
+            if st.button("🚀 Extract Payment Ref", key='kazang_extract_payment_ref_btn', width="stretch"):
                 self.extract_kazang_payment_ref()
 
         with col2:
@@ -291,7 +294,7 @@ class KazangWorkflow:
             st.caption("Extract RJ numbers from Comment column")
             if 'RJ-Number' in ledger_cols:
                 st.success("✅ RJ-Number column added")
-            if st.button("🚀 Extract RJ Number", key='kazang_rj_number_btn', use_container_width=True):
+            if st.button("🚀 Extract RJ Number", key='kazang_rj_number_btn', width="stretch"):
                 self.extract_rj_number()
 
     def extract_kazang_payment_ref(self):
@@ -376,7 +379,7 @@ class KazangWorkflow:
                         'Payment Ref': payment_refs[i],
                         'RJ-Number': rj_numbers[i]
                     })
-                st.dataframe(pd.DataFrame(sample_data), use_container_width=True)
+                st.dataframe(pd.DataFrame(sample_data), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error extracting Payment Ref: {str(e)}")
@@ -436,7 +439,7 @@ class KazangWorkflow:
                         'Original Comment': ledger.iloc[i][comment_col],
                         'RJ-Number': rj_numbers[i]
                     })
-                st.dataframe(pd.DataFrame(sample_data), use_container_width=True)
+                st.dataframe(pd.DataFrame(sample_data), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error extracting RJ numbers: {str(e)}")
@@ -633,16 +636,16 @@ class KazangWorkflow:
         col1, col2, col3 = st.columns([2, 1, 1])
 
         with col1:
-            if st.button("🚀 Start Reconciliation", type="primary", use_container_width=True, key="kazang_start_recon"):
+            if st.button("🚀 Start Reconciliation", type="primary", width="stretch", key="kazang_start_recon"):
                 self.run_reconciliation()
 
         with col2:
-            if st.button("🔄 Reset", use_container_width=True, key="kazang_reset"):
+            if st.button("🔄 Reset", width="stretch", key="kazang_reset"):
                 st.session_state.kazang_results = None
                 st.rerun()
 
         with col3:
-            if st.button("❌ Clear All", use_container_width=True, key="kazang_clear_all"):
+            if st.button("❌ Clear All", width="stretch", key="kazang_clear_all"):
                 st.session_state.kazang_ledger = None
                 st.session_state.kazang_statement = None
                 st.session_state.kazang_results = None
@@ -816,7 +819,7 @@ class KazangWorkflow:
                     textinfo='label+value+percent'
                 )])
                 fig_pie.update_layout(height=400, showlegend=True, margin=dict(t=0, b=0, l=0, r=0))
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width="stretch")
         
         with col2:
             st.markdown("#### Key Metrics")
@@ -837,7 +840,7 @@ class KazangWorkflow:
                 textposition='auto'
             )])
             fig_bar.update_layout(height=400, yaxis_title="Count", showlegend=False, margin=dict(t=0, b=0, l=0, r=0))
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width="stretch")
 
         # Category navigation
         st.markdown("---")
@@ -849,37 +852,37 @@ class KazangWorkflow:
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            if st.button("✅ Matched", use_container_width=True,
+            if st.button("✅ Matched", width="stretch",
                         type="primary" if st.session_state.kazang_selected_category == 'matched' else "secondary",
                         key='kazang_btn_matched'):
                 st.session_state.kazang_selected_category = 'matched'
-            if st.button("🔀 Split Transactions", use_container_width=True,
+            if st.button("🔀 Split Transactions", width="stretch",
                         type="primary" if st.session_state.kazang_selected_category == 'split' else "secondary",
                         key='kazang_btn_split'):
                 st.session_state.kazang_selected_category = 'split'
 
         with col2:
-            if st.button("📊 All Transactions", use_container_width=True,
+            if st.button("📊 All Transactions", width="stretch",
                         type="primary" if st.session_state.kazang_selected_category == 'all' else "secondary",
                         key='kazang_btn_all'):
                 st.session_state.kazang_selected_category = 'all'
-            if st.button("💜 Balanced By Fuzzy", use_container_width=True,
+            if st.button("💜 Balanced By Fuzzy", width="stretch",
                         type="primary" if st.session_state.kazang_selected_category == 'fuzzy' else "secondary",
                         key='kazang_btn_fuzzy'):
                 st.session_state.kazang_selected_category = 'fuzzy'
 
         with col3:
-            if st.button("❌ Unmatched Ledger", use_container_width=True,
+            if st.button("❌ Unmatched Ledger", width="stretch",
                         type="primary" if st.session_state.kazang_selected_category == 'unmatched_ledger' else "secondary",
                         key='kazang_btn_unmatched_ledger'):
                 st.session_state.kazang_selected_category = 'unmatched_ledger'
-            if st.button("💎 Foreign Credits", use_container_width=True,
+            if st.button("💎 Foreign Credits", width="stretch",
                         type="primary" if st.session_state.kazang_selected_category == 'foreign' else "secondary",
                         key='kazang_btn_foreign'):
                 st.session_state.kazang_selected_category = 'foreign'
 
         with col4:
-            if st.button("⚠️ Unmatched Statement", use_container_width=True,
+            if st.button("⚠️ Unmatched Statement", width="stretch",
                         type="primary" if st.session_state.kazang_selected_category == 'unmatched_statement' else "secondary",
                         key='kazang_btn_unmatched_stmt'):
                 st.session_state.kazang_selected_category = 'unmatched_statement'
@@ -892,7 +895,7 @@ class KazangWorkflow:
         col_a, col_b = st.columns(2)
 
         with col_a:
-            if st.button("💾 Save Results to Database", type="primary", use_container_width=True, key="kazang_save_db"):
+            if st.button("💾 Save Results to Database", type="primary", width="stretch", key="kazang_save_db"):
                 self.save_results_to_db(results)
 
         with col_b:
@@ -900,7 +903,7 @@ class KazangWorkflow:
                 st.session_state.kazang_export_mode = False
             
             if not st.session_state.kazang_export_mode:
-                if st.button("📊 Export All to Excel", type="primary", use_container_width=True, key="kazang_export_excel"):
+                if st.button("📊 Export All to Excel", type="primary", width="stretch", key="kazang_export_excel"):
                     st.session_state.kazang_export_mode = True
         
         if st.session_state.get('kazang_export_mode', False):
@@ -972,7 +975,7 @@ class KazangWorkflow:
         if category_data is not None and not category_data.empty:
             st.markdown(f"### {category_title}")
             st.info(f"📊 Found {len(category_data)} transaction(s)")
-            st.dataframe(category_data, use_container_width=True, height=400)
+            st.dataframe(category_data, width="stretch", height=400)
             st.download_button(
                 f"📥 Download {category_title}",
                 category_data.to_csv(index=False),
@@ -1027,10 +1030,10 @@ class KazangWorkflow:
                     value = row_dict.get(col, '')
                     if pd.notna(value) and ('Date' in col or 'date' in col):
                         try:
-                            value = pd.to_datetime(value, errors='ignore')
+                            value = pd.to_datetime(value)
                             if isinstance(value, pd.Timestamp):
                                 value = value.strftime('%Y-%m-%d')
-                        except:
+                        except (ValueError, TypeError):
                             pass
                     if pd.isna(value):
                         value = ''
@@ -1114,7 +1117,7 @@ class KazangWorkflow:
                     data=csv_string,
                     file_name=f"Kazang_Reconciliation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width="stretch"
                 )
 
             st.success("✅ Report ready for download!")

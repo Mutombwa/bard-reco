@@ -11,6 +11,7 @@ Special ABSA Features:
   * Fee: 5.49 (extracted from "( 5,49 )" where comma is decimal separator)
 """
 
+import logging
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -19,6 +20,8 @@ from fuzzywuzzy import fuzz
 import sys
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -214,12 +217,12 @@ class ABSAWorkflow:
             
             with col1:
                 if st.session_state.absa_ledger is not None:
-                    if st.button("📊 View & Edit Ledger", key='absa_view_edit_ledger_btn', use_container_width=True, type="secondary"):
+                    if st.button("📊 View & Edit Ledger", key='absa_view_edit_ledger_btn', width="stretch", type="secondary"):
                         st.session_state.absa_show_ledger_editor = True
             
             with col2:
                 if st.session_state.absa_statement is not None:
-                    if st.button("📊 View & Edit Statement", key='absa_view_edit_statement_btn', use_container_width=True, type="secondary"):
+                    if st.button("📊 View & Edit Statement", key='absa_view_edit_statement_btn', width="stretch", type="secondary"):
                         st.session_state.absa_show_statement_editor = True
             
             # Show Ledger Editor
@@ -276,7 +279,7 @@ class ABSAWorkflow:
             st.caption("Extract Reference and Fee from Description")
             if 'Reference' in statement_cols and 'Fee' in statement_cols:
                 st.success("✅ Reference and Fee extracted")
-            if st.button("🚀 Launch", key='absa_extract_absa_ref_fee', use_container_width=True):
+            if st.button("🚀 Launch", key='absa_extract_absa_ref_fee', width="stretch"):
                 self.extract_absa_reference_and_fee()
 
         with col2:
@@ -284,7 +287,7 @@ class ABSAWorkflow:
             st.caption("Extract names from Ledger Description")
             if 'Reference' in ledger_cols:
                 st.success("✅ Reference added to Ledger")
-            if st.button("🚀 Launch", key='absa_add_ledger_reference_btn', use_container_width=True):
+            if st.button("🚀 Launch", key='absa_add_ledger_reference_btn', width="stretch"):
                 self.add_ledger_reference()
 
         with col3:
@@ -292,7 +295,7 @@ class ABSAWorkflow:
             st.caption("Generate RJ numbers")
             if 'RJ-Number' in ledger_cols and 'Payment Ref' in ledger_cols:
                 st.success("✅ RJ-Number & Payment Ref added")
-            if st.button("🚀 Launch", key='absa_rj_payment_ref_btn', use_container_width=True):
+            if st.button("🚀 Launch", key='absa_rj_payment_ref_btn', width="stretch"):
                 self.rj_payment_ref_tool()
 
     def extract_absa_reference_and_fee(self):
@@ -456,7 +459,7 @@ class ABSAWorkflow:
             # Show preview
             with st.expander("📊 Preview Extracted Data (first 10 rows)"):
                 preview_cols = [desc_col, 'Reference', 'Fee']
-                st.dataframe(statement[preview_cols].head(10), use_container_width=True)
+                st.dataframe(statement[preview_cols].head(10), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error extracting ABSA data: {str(e)}")
@@ -524,7 +527,7 @@ class ABSAWorkflow:
                             result = extractor(match)
                             if result:
                                 return result.strip()
-                        except Exception:
+                        except (ValueError, TypeError, KeyError):
                             continue
 
                 # Fallback: extract capitalized words
@@ -555,7 +558,7 @@ class ABSAWorkflow:
 
             st.success("✅ Reference extracted from ledger!")
             with st.expander("📊 Preview (first 10 rows)"):
-                st.dataframe(ledger[[desc_col, 'Reference']].head(10), use_container_width=True)
+                st.dataframe(ledger[[desc_col, 'Reference']].head(10), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error adding reference: {str(e)}")
@@ -640,7 +643,7 @@ class ABSAWorkflow:
                 del st.session_state.absa_saved_selections
 
             st.success("✅ Added RJ-Number and Payment Ref columns to ledger")
-            st.dataframe(ledger[['RJ-Number', 'Payment Ref']].head(10), use_container_width=True)
+            st.dataframe(ledger[['RJ-Number', 'Payment Ref']].head(10), width="stretch")
 
         except Exception as e:
             st.error(f"❌ Error generating RJ & Payment Ref: {str(e)}")
@@ -801,16 +804,16 @@ class ABSAWorkflow:
         col1, col2, col3 = st.columns([2, 1, 1])
 
         with col1:
-            if st.button("🚀 Start Reconciliation", type="primary", use_container_width=True, key="absa_start_recon"):
+            if st.button("🚀 Start Reconciliation", type="primary", width="stretch", key="absa_start_recon"):
                 self.run_reconciliation()
 
         with col2:
-            if st.button("🔄 Reset", use_container_width=True, key="absa_reset"):
+            if st.button("🔄 Reset", width="stretch", key="absa_reset"):
                 st.session_state.absa_results = None
                 st.rerun()
 
         with col3:
-            if st.button("❌ Clear All", use_container_width=True, key="absa_clear_all"):
+            if st.button("❌ Clear All", width="stretch", key="absa_clear_all"):
                 st.session_state.absa_ledger = None
                 st.session_state.absa_statement = None
                 st.session_state.absa_results = None
@@ -895,7 +898,7 @@ class ABSAWorkflow:
         # Make export button prominent and always visible
         if not st.session_state.absa_export_mode:
             st.markdown("### 📥 Export Options")
-            if st.button("📊 Export All to Excel", type="primary", use_container_width=True, key="absa_export_excel"):
+            if st.button("📊 Export All to Excel", type="primary", width="stretch", key="absa_export_excel"):
                 st.session_state.absa_export_mode = True
             st.markdown("---")
         
@@ -909,15 +912,15 @@ class ABSAWorkflow:
         
         with tabs[0]:
             if 'matched' in results and not results['matched'].empty:
-                st.dataframe(results['matched'], use_container_width=True)
+                st.dataframe(results['matched'], width="stretch")
         
         with tabs[1]:
             if 'unmatched_ledger' in results and not results['unmatched_ledger'].empty:
-                st.dataframe(results['unmatched_ledger'], use_container_width=True)
+                st.dataframe(results['unmatched_ledger'], width="stretch")
         
         with tabs[2]:
             if 'unmatched_statement' in results and not results['unmatched_statement'].empty:
-                st.dataframe(results['unmatched_statement'], use_container_width=True)
+                st.dataframe(results['unmatched_statement'], width="stretch")
 
         # Save to Database section
         st.markdown("---")
@@ -1260,7 +1263,7 @@ class ABSAWorkflow:
                     data=csv_string,
                     file_name=f"ABSA_Reconciliation_Batched_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width="stretch"
                 )
 
             st.success("✅ Batched CSV report ready for download! Organized like GUI export with separators.")
@@ -1304,7 +1307,7 @@ class ABSAWorkflow:
             st.metric("Unmatched (Statement)", unmatched_statement_count)
 
         # Save button
-        if st.button("💾 Save to Database", type="primary", use_container_width=True, key="absa_save_to_db_btn"):
+        if st.button("💾 Save to Database", type="primary", width="stretch", key="absa_save_to_db_btn"):
             success = self.save_results_to_db(session_name, results)
             if success:
                 st.success("✅ Results saved successfully!")

@@ -139,7 +139,7 @@ class SessionHistory:
                     date_str = dt.strftime("%Y-%m-%d %H:%M")
                 else:
                     date_str = str(created_at)
-            except:
+            except (ValueError, TypeError, AttributeError):
                 date_str = created_at
         else:
             date_str = "Unknown"
@@ -237,7 +237,7 @@ class SaveResultsDialog:
             st.metric("Unmatched (Statement)", unmatched_statement_count)
 
         # Save button
-        if st.button("Save to Database", type="primary", use_container_width=True, key=f"save_btn_{workflow_type}"):
+        if st.button("Save to Database", type="primary", width="stretch", key=f"save_btn_{workflow_type}"):
             if on_save_callback:
                 success = on_save_callback(session_name)
                 if success:

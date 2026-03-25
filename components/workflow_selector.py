@@ -5,6 +5,7 @@ Select between FNB, Bidvest, and Corporate Settlements workflows
 """
 
 import streamlit as st
+from utils.session_state import cleanup_workflow_state
 
 class WorkflowSelector:
     """Workflow selection interface"""
@@ -94,6 +95,10 @@ class WorkflowSelector:
             st.markdown(f"• {feature}")
 
         # Select button
-        if st.button(f"Select {workflow['name']}", key=f"select_{key}", use_container_width=True, type="primary"):
+        if st.button(f"Select {workflow['name']}", key=f"select_{key}", width="stretch", type="primary"):
+            # Clean up previous workflow state to free memory
+            previous = st.session_state.get('selected_workflow')
+            if previous and previous != key:
+                cleanup_workflow_state(previous)
             st.session_state.selected_workflow = key
             st.rerun()

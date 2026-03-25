@@ -6,9 +6,12 @@ Stores reconciliation results in SQLite database for history and retrieval
 
 import sqlite3
 import json
+import logging
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class ReconciliationDB:
@@ -129,44 +132,56 @@ class ReconciliationDB:
             )
             result_id = cursor.lastrowid
 
-            # Save matched transactions
+            # Save matched transactions (batch insert)
             if 'matched' in results and not results['matched'].empty:
+                records = []
                 for _, row in results['matched'].iterrows():
                     match_score = row.get('Match_Score', 0)
                     ledger_data = {k: v for k, v in row.items() if k.startswith('Ledger_')}
                     statement_data = {k: v for k, v in row.items() if k.startswith('Statement_')}
+                    records.append((result_id, match_score, json.dumps(ledger_data, default=str), json.dumps(statement_data, default=str)))
 
-                    self.conn.execute(
-                        '''INSERT INTO matched_transactions (result_id, match_score, ledger_data, statement_data)
-                           VALUES (?, ?, ?, ?)''',
-                        (result_id, match_score, json.dumps(ledger_data), json.dumps(statement_data))
-                    )
+                self.conn.executemany(
+                    '''INSERT INTO matched_transactions (result_id, match_score, ledger_data, statement_data)
+                       VALUES (?, ?, ?, ?)''',
+                    records
+                )
+                logger.info("Batch inserted %d matched transactions for result_id=%d", len(records), result_id)
 
-            # Save unmatched ledger
+            # Save unmatched ledger (batch insert)
             if 'unmatched_ledger' in results and not results['unmatched_ledger'].empty:
+                records = []
                 for _, row in results['unmatched_ledger'].iterrows():
                     transaction_data = row.to_dict()
-                    self.conn.execute(
-                        '''INSERT INTO unmatched_ledger (result_id, transaction_data)
-                           VALUES (?, ?)''',
-                        (result_id, json.dumps(transaction_data))
-                    )
+                    records.append((result_id, json.dumps(transaction_data, default=str)))
 
-            # Save unmatched statement
+                self.conn.executemany(
+                    '''INSERT INTO unmatched_ledger (result_id, transaction_data)
+                       VALUES (?, ?)''',
+                    records
+                )
+                logger.info("Batch inserted %d unmatched ledger transactions for result_id=%d", len(records), result_id)
+
+            # Save unmatched statement (batch insert)
             if 'unmatched_statement' in results and not results['unmatched_statement'].empty:
+                records = []
                 for _, row in results['unmatched_statement'].iterrows():
                     transaction_data = row.to_dict()
-                    self.conn.execute(
-                        '''INSERT INTO unmatched_statement (result_id, transaction_data)
-                           VALUES (?, ?)''',
-                        (result_id, json.dumps(transaction_data))
-                    )
+                    records.append((result_id, json.dumps(transaction_data, default=str)))
+
+                self.conn.executemany(
+                    '''INSERT INTO unmatched_statement (result_id, transaction_data)
+                       VALUES (?, ?)''',
+                    records
+                )
+                logger.info("Batch inserted %d unmatched statement transactions for result_id=%d", len(records), result_id)
 
             self.conn.commit()
             return result_id
 
         except Exception as e:
             self.conn.rollback()
+            logger.error("Failed to save result: %s", str(e))
             raise Exception(f"Failed to save result: {str(e)}")
 
     def list_results(self, workflow_type=None, limit=50):
@@ -288,6 +303,7 @@ class ReconciliationDB:
             return True
         except Exception as e:
             self.conn.rollback()
+            logger.error("Failed to delete result: %s", str(e))
             raise Exception(f"Failed to delete result: {str(e)}")
 
     def close(self):

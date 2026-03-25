@@ -11,6 +11,7 @@ and the new collaborative dashboard system. It handles:
 - Workflow automation
 """
 
+import os
 import requests
 import json
 import uuid
@@ -309,10 +310,10 @@ class CollaborativeDashboardIntegration:
 
 # Utility functions for easy integration
 
-def create_collaborative_session(session_name: str, workflow_type: str, 
+def create_collaborative_session(session_name: str, workflow_type: str,
                                 description: str = "", priority: str = "normal",
                                 dashboard_url: str = "http://localhost:5000",
-                                username: str = "admin", password: str = "admin123") -> Optional[str]:
+                                username: str = "admin", password: str = os.environ.get("ADMIN_PASSWORD", "change-me-immediately")) -> Optional[str]:
     """
     Quick function to create a collaborative session
     
@@ -337,10 +338,10 @@ def create_collaborative_session(session_name: str, workflow_type: str,
     return integration.create_session(session_name, workflow_type, description, priority)
 
 
-def post_reconciliation_to_dashboard(session_id: str, results: Dict, 
+def post_reconciliation_to_dashboard(session_id: str, results: Dict,
                                     metadata: Dict = None,
                                     dashboard_url: str = "http://localhost:5000",
-                                    username: str = "admin", password: str = "admin123") -> bool:
+                                    username: str = "admin", password: str = os.environ.get("ADMIN_PASSWORD", "change-me-immediately")) -> bool:
     """
     Quick function to post reconciliation results to dashboard
     
@@ -364,10 +365,10 @@ def post_reconciliation_to_dashboard(session_id: str, results: Dict,
     return integration.post_reconciliation_results(session_id, results, metadata)
 
 
-def create_session_and_post_results(session_name: str, workflow_type: str, 
+def create_session_and_post_results(session_name: str, workflow_type: str,
                                    results: Dict, description: str = "",
                                    dashboard_url: str = "http://localhost:5000",
-                                   username: str = "admin", password: str = "admin123") -> Optional[str]:
+                                   username: str = "admin", password: str = os.environ.get("ADMIN_PASSWORD", "change-me-immediately")) -> Optional[str]:
     """
     Create a session and post results in one call
     
@@ -412,7 +413,7 @@ if __name__ == "__main__":
     integration = CollaborativeDashboardIntegration(
         dashboard_url="http://localhost:5000",
         username="admin",
-        password="admin123"
+        password=os.environ.get("ADMIN_PASSWORD", "change-me-immediately")
     )
     
     if integration.check_connection():

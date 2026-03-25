@@ -197,9 +197,9 @@ def show_login_page():
 
             col_a, col_b = st.columns(2)
             with col_a:
-                submit = st.form_submit_button("🚀 Login", use_container_width=True)
+                submit = st.form_submit_button("🚀 Login", width="stretch")
             with col_b:
-                register = st.form_submit_button("📝 Register", use_container_width=True)
+                register = st.form_submit_button("📝 Register", width="stretch")
 
             if submit:
                 if auth.login(username, password):
@@ -227,9 +227,9 @@ def show_login_page():
 
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    register_submit = st.form_submit_button("✨ Create Account", use_container_width=True)
+                    register_submit = st.form_submit_button("✨ Create Account", width="stretch")
                 with col_b:
-                    cancel = st.form_submit_button("Cancel", use_container_width=True)
+                    cancel = st.form_submit_button("Cancel", width="stretch")
 
                 if register_submit:
                     if not email:
@@ -278,7 +278,7 @@ def show_main_app():
         st.markdown("---")
         
         # Logout button
-        if st.button("🚪 Logout", use_container_width=True):
+        if st.button("🚪 Logout", width="stretch"):
             st.session_state.session.logout()
             st.rerun()
 
@@ -384,7 +384,7 @@ def show_reconciliation_page():
 
             # Show preview (collapsed by default to reduce initial load)
             with st.expander("👁️ Preview Data", expanded=False):
-                st.dataframe(ledger_df.head(10), use_container_width=True)
+                st.dataframe(ledger_df.head(10), width="stretch")
                 st.info(f"📊 {get_dataframe_info(ledger_df)}")
 
     with col2:
@@ -412,7 +412,7 @@ def show_reconciliation_page():
 
             # Show preview (collapsed by default to reduce initial load)
             with st.expander("👁️ Preview Data", expanded=False):
-                st.dataframe(statement_df.head(10), use_container_width=True)
+                st.dataframe(statement_df.head(10), width="stretch")
                 st.info(f"📊 {get_dataframe_info(statement_df)}")
 
     # Data editing option
@@ -422,11 +422,11 @@ def show_reconciliation_page():
 
         col1, col2 = st.columns(2)
         with col1:
-            if 'ledger_df' in st.session_state and st.button("✏️ Edit Ledger Data", use_container_width=True):
+            if 'ledger_df' in st.session_state and st.button("✏️ Edit Ledger Data", width="stretch"):
                 st.session_state.editing_ledger = True
 
         with col2:
-            if 'statement_df' in st.session_state and st.button("✏️ Edit Statement Data", use_container_width=True):
+            if 'statement_df' in st.session_state and st.button("✏️ Edit Statement Data", width="stretch"):
                 st.session_state.editing_statement = True
 
         # Show data editor
@@ -492,7 +492,7 @@ def show_reconciliation_page():
 
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🚀 Start Reconciliation", use_container_width=True, type="primary"):
+            if st.button("🚀 Start Reconciliation", width="stretch", type="primary"):
                 run_reconciliation(
                     ledger_df, statement_df,
                     ledger_amount, statement_amount,
@@ -578,25 +578,25 @@ def show_reconciliation_results(results):
 
     with tab1:
         if results.get('perfect_matches'):
-            st.dataframe(results['perfect_matches'], use_container_width=True)
+            st.dataframe(results['perfect_matches'], width="stretch")
         else:
             st.info("No perfect matches found")
 
     with tab2:
         if results.get('fuzzy_matches'):
-            st.dataframe(results['fuzzy_matches'], use_container_width=True)
+            st.dataframe(results['fuzzy_matches'], width="stretch")
         else:
             st.info("No fuzzy matches found")
 
     with tab3:
         if results.get('balanced'):
-            st.dataframe(results['balanced'], use_container_width=True)
+            st.dataframe(results['balanced'], width="stretch")
         else:
             st.info("No balanced matches found")
 
     with tab4:
         if results.get('unmatched'):
-            st.dataframe(results['unmatched'], use_container_width=True)
+            st.dataframe(results['unmatched'], width="stretch")
         else:
             st.success("✅ All transactions matched!")
 
@@ -606,13 +606,13 @@ def show_reconciliation_results(results):
         col1, col2 = st.columns(2)
 
         with col1:
-            if st.button("📊 Export to Excel", use_container_width=True):
+            if st.button("📊 Export to Excel", width="stretch"):
                 from utils.export_utils import export_to_excel
                 file_path = export_to_excel(results, st.session_state.session.username)
                 st.success(f"✅ Exported to: {file_path}")
 
         with col2:
-            if st.button("📄 Generate Report", use_container_width=True):
+            if st.button("📄 Generate Report", width="stretch"):
                 from utils.report_generator import generate_report
                 report_path = generate_report(results, st.session_state.session.username)
                 st.success(f"✅ Report generated: {report_path}")
@@ -685,7 +685,7 @@ def show_saved_reconciliations():
                 })
 
             df = pd.DataFrame(results_data)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
 
             # Delete functionality
             st.markdown("---")
@@ -724,26 +724,26 @@ def show_result_viewer():
                 # Display summary
                 st.markdown("### 📊 Summary")
                 summary_df = pd.DataFrame([result['summary']])
-                st.dataframe(summary_df, use_container_width=True)
+                st.dataframe(summary_df, width="stretch")
 
                 # Display data in tabs
                 tab1, tab2, tab3 = st.tabs(["✅ Matched", "📋 Unmatched Ledger", "🏦 Unmatched Statement"])
 
                 with tab1:
                     if not result['matched'].empty:
-                        st.dataframe(result['matched'], use_container_width=True)
+                        st.dataframe(result['matched'], width="stretch")
                     else:
                         st.info("No matched transactions")
 
                 with tab2:
                     if not result['unmatched_ledger'].empty:
-                        st.dataframe(result['unmatched_ledger'], use_container_width=True)
+                        st.dataframe(result['unmatched_ledger'], width="stretch")
                     else:
                         st.info("No unmatched ledger items")
 
                 with tab3:
                     if not result['unmatched_statement'].empty:
-                        st.dataframe(result['unmatched_statement'], use_container_width=True)
+                        st.dataframe(result['unmatched_statement'], width="stretch")
                     else:
                         st.info("No unmatched statement items")
             else:

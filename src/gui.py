@@ -2,7 +2,10 @@ import tkinter as tk
 from tkinter import messagebox, filedialog, simpledialog, ttk
 from bidvest_workflow_page import BidvestWorkflowPage
 from corporate_settlements_workflow import CorporateSettlementsWorkflowPage
-from enhanced_data_editor import EnhancedDataEditor
+try:
+    from enhanced_data_editor import EnhancedDataEditor
+except ImportError:
+    EnhancedDataEditor = None  # Removed: enhanced_data_editor.py was dead code
 import pandas as pd
 from typing import Optional
 import sqlite3

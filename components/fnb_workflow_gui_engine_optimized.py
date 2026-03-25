@@ -207,7 +207,7 @@ class OptimizedReconciliationEngine:
                 )
                 if ledger[f'_normalized_{date_ledger}'].isna().all():
                     ledger[f'_normalized_{date_ledger}'] = pd.to_datetime(ledger[date_ledger], errors='coerce')
-            except:
+            except (ValueError, TypeError):
                 ledger[f'_normalized_{date_ledger}'] = pd.to_datetime(ledger[date_ledger], errors='coerce')
 
             # Log validation issues
@@ -223,7 +223,7 @@ class OptimizedReconciliationEngine:
                 )
                 if statement[f'_normalized_{date_statement}'].isna().all():
                     statement[f'_normalized_{date_statement}'] = pd.to_datetime(statement[date_statement], errors='coerce')
-            except:
+            except (ValueError, TypeError):
                 statement[f'_normalized_{date_statement}'] = pd.to_datetime(statement[date_statement], errors='coerce')
 
             invalid_dates = statement[f'_normalized_{date_statement}'].isna().sum()

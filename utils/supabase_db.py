@@ -9,8 +9,11 @@ import streamlit as st
 from datetime import datetime
 from typing import Optional, Dict, List, Any, Tuple
 import json
+import logging
 import pandas as pd
 import uuid
+
+logger = logging.getLogger(__name__)
 
 class SupabaseDB:
     """
@@ -34,7 +37,7 @@ class SupabaseDB:
             try:
                 supabase_url = st.secrets.get("SUPABASE_URL", "")
                 supabase_key = st.secrets.get("SUPABASE_KEY", "")
-            except:
+            except (KeyError, AttributeError):
                 pass
 
             # Try format 2: st.secrets["supabase"]["url"]
@@ -42,7 +45,7 @@ class SupabaseDB:
                 try:
                     supabase_url = st.secrets["supabase"]["url"]
                     supabase_key = st.secrets["supabase"]["key"]
-                except:
+                except (KeyError, TypeError):
                     pass
 
             # Try environment variables as fallback
@@ -59,7 +62,7 @@ class SupabaseDB:
                 self.enabled = False
 
         except Exception as e:
-            print(f"Supabase initialization warning: {e}")
+            logger.warning(f"Supabase initialization warning: {e}")
             self.enabled = False
 
     def is_enabled(self) -> bool:
@@ -115,7 +118,7 @@ class SupabaseDB:
             return None
 
         except Exception as e:
-            print(f"Error creating session: {e}")
+            logger.error(f"Error creating session: {e}")
             return self._create_local_session(session_name, workflow_type)
 
     def _create_local_session(self, session_name: str, workflow_type: str) -> str:
@@ -175,7 +178,7 @@ class SupabaseDB:
             return bool(result.data)
 
         except Exception as e:
-            print(f"Error updating session: {e}")
+            logger.error(f"Error updating session: {e}")
             return False
 
     def _update_local_session(
@@ -254,7 +257,7 @@ class SupabaseDB:
             return True
 
         except Exception as e:
-            print(f"Error saving matched transactions: {e}")
+            logger.error(f"Error saving matched transactions: {e}")
             return False
 
     def _save_local_matches(
@@ -324,7 +327,7 @@ class SupabaseDB:
             return True
 
         except Exception as e:
-            print(f"Error saving unmatched transactions: {e}")
+            logger.error(f"Error saving unmatched transactions: {e}")
             return False
 
     def _save_local_unmatched(
@@ -390,7 +393,7 @@ class SupabaseDB:
             return True
 
         except Exception as e:
-            print(f"Error logging action: {e}")
+            logger.error(f"Error logging action: {e}")
             return False
 
     def _log_local_action(self, action_type: str, session_id: Optional[str]) -> bool:
@@ -440,7 +443,7 @@ class SupabaseDB:
             return result.data if result.data else []
 
         except Exception as e:
-            print(f"Error getting session history: {e}")
+            logger.error(f"Error getting session history: {e}")
             return []
 
     def _get_local_session_history(
@@ -489,7 +492,7 @@ class SupabaseDB:
             return result
 
         except Exception as e:
-            print(f"Error getting session details: {e}")
+            logger.error(f"Error getting session details: {e}")
             return None
 
     # =============================================
@@ -524,15 +527,10 @@ class SupabaseDB:
 # CONVENIENCE FUNCTIONS
 # =============================================
 
-# Singleton instance
-_db_instance = None
-
+@st.cache_resource
 def get_db() -> SupabaseDB:
-    """Get the singleton database instance"""
-    global _db_instance
-    if _db_instance is None:
-        _db_instance = SupabaseDB()
-    return _db_instance
+    """Get the cached database instance."""
+    return SupabaseDB()
 
 
 def save_reconciliation_results(
@@ -603,5 +601,5 @@ def save_reconciliation_results(
         return True, session_id
 
     except Exception as e:
-        print(f"Error saving reconciliation results: {e}")
+        logger.error(f"Error saving reconciliation results: {e}")
         return False, session_id

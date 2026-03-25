@@ -4,6 +4,8 @@ SQL Server Database Module for Reconciliation App
 Handles database operations for storing reconciliation transactions and results
 """
 
+import logging
+
 try:
     import pyodbc
     PYODBC_AVAILABLE = True
@@ -15,6 +17,8 @@ import pandas as pd
 from datetime import datetime
 from typing import Optional, Dict, List
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 
 class ReconciliationDatabase:
@@ -185,6 +189,7 @@ class ReconciliationDatabase:
             
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error creating tables: %s", str(e))
             st.error(f"Error creating tables: {str(e)}")
             return False
         finally:
@@ -212,6 +217,7 @@ class ReconciliationDatabase:
             
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error creating session: %s", str(e))
             st.error(f"Error creating session: {str(e)}")
             return None
         finally:
@@ -225,36 +231,41 @@ class ReconciliationDatabase:
         
         cursor = self.conn.cursor()
         try:
+            records = []
             for _, row in matched_df.iterrows():
-                cursor.execute("""
-                    INSERT INTO MatchedTransactions (
-                        SessionID, MatchType, 
-                        LedgerDate, LedgerReference, LedgerDebit, LedgerCredit, LedgerDescription,
-                        StatementDate, StatementReference, StatementAmount, StatementDescription,
-                        MatchScore, Currency
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, 
+                records.append((
                     session_id,
                     row.get('Match_Type', 'Unknown'),
                     row.get('Ledger_Date'),
-                    row.get('Ledger_Reference', '')[:255],
+                    str(row.get('Ledger_Reference', ''))[:255],
                     row.get('Ledger_Debit', 0),
                     row.get('Ledger_Credit', 0),
-                    row.get('Ledger_Description', '')[:500],
+                    str(row.get('Ledger_Description', ''))[:500],
                     row.get('Statement_Date'),
-                    row.get('Statement_Reference', '')[:255],
+                    str(row.get('Statement_Reference', ''))[:255],
                     row.get('Statement_Amount', 0),
-                    row.get('Statement_Description', '')[:500],
+                    str(row.get('Statement_Description', ''))[:500],
                     row.get('Match_Score', 0),
                     row.get('Currency', 'ZAR')
+                ))
+
+            cursor.executemany("""
+                INSERT INTO MatchedTransactions (
+                    SessionID, MatchType,
+                    LedgerDate, LedgerReference, LedgerDebit, LedgerCredit, LedgerDescription,
+                    StatementDate, StatementReference, StatementAmount, StatementDescription,
+                    MatchScore, Currency
                 )
-            
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, records)
+
             self.conn.commit()
+            logger.info("Batch inserted %d matched transactions for session_id=%d", len(records), session_id)
             return True
-            
+
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error saving matched transactions: %s", str(e))
             st.error(f"Error saving matched transactions: {str(e)}")
             return False
         finally:
@@ -292,6 +303,7 @@ class ReconciliationDatabase:
             
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error saving split transactions: %s", str(e))
             st.error(f"Error saving split transactions: {str(e)}")
             return False
         finally:
@@ -306,45 +318,54 @@ class ReconciliationDatabase:
         
         cursor = self.conn.cursor()
         try:
-            # Save unmatched ledger
+            # Save unmatched ledger (batch insert)
             if not unmatched_ledger.empty:
+                ledger_records = []
                 for _, row in unmatched_ledger.iterrows():
-                    cursor.execute("""
-                        INSERT INTO UnmatchedTransactions (
-                            SessionID, Source, TransactionDate, Reference, Amount, Description, Currency
-                        )
-                        VALUES (?, 'Ledger', ?, ?, ?, ?, ?)
-                    """,
+                    ledger_records.append((
                         session_id,
                         row.get('Date'),
-                        row.get('Reference', '')[:255],
+                        str(row.get('Reference', ''))[:255],
                         row.get('Debit', 0) or row.get('Credit', 0),
-                        row.get('Description', '')[:500],
+                        str(row.get('Description', ''))[:500],
                         row.get('Currency', 'ZAR')
+                    ))
+
+                cursor.executemany("""
+                    INSERT INTO UnmatchedTransactions (
+                        SessionID, Source, TransactionDate, Reference, Amount, Description, Currency
                     )
-            
-            # Save unmatched statement
+                    VALUES (?, 'Ledger', ?, ?, ?, ?, ?)
+                """, ledger_records)
+                logger.info("Batch inserted %d unmatched ledger transactions for session_id=%d", len(ledger_records), session_id)
+
+            # Save unmatched statement (batch insert)
             if not unmatched_statement.empty:
+                statement_records = []
                 for _, row in unmatched_statement.iterrows():
-                    cursor.execute("""
-                        INSERT INTO UnmatchedTransactions (
-                            SessionID, Source, TransactionDate, Reference, Amount, Description, Currency
-                        )
-                        VALUES (?, 'Statement', ?, ?, ?, ?, ?)
-                    """,
+                    statement_records.append((
                         session_id,
                         row.get('Date'),
-                        row.get('Reference', '')[:255],
+                        str(row.get('Reference', ''))[:255],
                         row.get('Amount', 0),
-                        row.get('Description', '')[:500],
+                        str(row.get('Description', ''))[:500],
                         row.get('Currency', 'ZAR')
+                    ))
+
+                cursor.executemany("""
+                    INSERT INTO UnmatchedTransactions (
+                        SessionID, Source, TransactionDate, Reference, Amount, Description, Currency
                     )
-            
+                    VALUES (?, 'Statement', ?, ?, ?, ?, ?)
+                """, statement_records)
+                logger.info("Batch inserted %d unmatched statement transactions for session_id=%d", len(statement_records), session_id)
+
             self.conn.commit()
             return True
-            
+
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error saving unmatched transactions: %s", str(e))
             st.error(f"Error saving unmatched transactions: {str(e)}")
             return False
         finally:
@@ -374,6 +395,7 @@ class ReconciliationDatabase:
             
         except Exception as e:
             self.conn.rollback()
+            logger.error("Error completing session: %s", str(e))
             st.error(f"Error completing session: {str(e)}")
             return False
         finally:
@@ -413,6 +435,7 @@ class ReconciliationDatabase:
                 return pd.read_sql(query, self.conn)
                 
         except Exception as e:
+            logger.error("Error fetching session history: %s", str(e))
             st.error(f"Error fetching session history: {str(e)}")
             return pd.DataFrame()
     
@@ -451,5 +474,6 @@ class ReconciliationDatabase:
             return details
             
         except Exception as e:
+            logger.error("Error fetching session details: %s", str(e))
             st.error(f"Error fetching session details: {str(e)}")
             return {}
