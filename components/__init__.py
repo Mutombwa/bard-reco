@@ -7,6 +7,7 @@ from .fnb_workflow import FNBWorkflow
 from .bidvest_workflow import BidvestWorkflow
 from .corporate_workflow import CorporateWorkflow
 from .kazang_workflow import KazangWorkflow
+from .capitec_workflow import CapitecWorkflow
 
 __all__ = [
     'DataEditor',
@@ -15,5 +16,6 @@ __all__ = [
     'FNBWorkflow',
     'BidvestWorkflow',
     'CorporateWorkflow',
-    'KazangWorkflow'
+    'KazangWorkflow',
+    'CapitecWorkflow'
 ]
