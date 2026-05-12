@@ -324,10 +324,6 @@ class CapitecWorkflow:
                     st.error("No suitable comment column found in ledger")
                     return
 
-            if 'Payment Ref' in ledger.columns:
-                st.info("Payment Ref column already exists in ledger")
-                return
-
             # Apply extraction using unified ReferenceExtractor
             payment_refs = []
             rj_numbers = []
@@ -337,15 +333,29 @@ class CapitecWorkflow:
                 payment_refs.append(payref)
                 rj_numbers.append(rj)
 
-            # Find position to insert columns (after Comment column)
             comment_idx = list(ledger.columns).index(comment_col)
 
-            # Insert Payment Ref column
-            ledger.insert(comment_idx + 1, 'Payment Ref', payment_refs)
+            def _is_blank(v):
+                if pd.isna(v):
+                    return True
+                s = str(v).strip()
+                return s == '' or s.lower() in ('nan', 'none', 'nat')
 
-            # Also insert RJ-Number if not exists
+            # Payment Ref: insert if missing; otherwise fill only blank cells
+            if 'Payment Ref' not in ledger.columns:
+                ledger.insert(comment_idx + 1, 'Payment Ref', payment_refs)
+            else:
+                existing = ledger['Payment Ref'].tolist()
+                filled = [new if _is_blank(old) else old for old, new in zip(existing, payment_refs)]
+                ledger['Payment Ref'] = filled
+
+            # RJ-Number: same fill-blanks behavior
             if 'RJ-Number' not in ledger.columns:
                 ledger.insert(comment_idx + 2, 'RJ-Number', rj_numbers)
+            else:
+                existing = ledger['RJ-Number'].tolist()
+                filled = [new if _is_blank(old) else old for old, new in zip(existing, rj_numbers)]
+                ledger['RJ-Number'] = filled
 
             st.session_state.capitec_ledger = ledger
 
@@ -383,10 +393,6 @@ class CapitecWorkflow:
 
             ledger = st.session_state.capitec_ledger.copy()
 
-            if 'RJ-Number' in ledger.columns:
-                st.info("RJ-Number column already exists")
-                return
-
             # Find Comment column
             comment_col = None
             for col in ledger.columns:
@@ -409,9 +415,20 @@ class CapitecWorkflow:
                 return rj_match.group(0).replace('#', '').replace('-', '').upper() if rj_match else ''
 
             rj_numbers = [extract_rj(val) for val in ledger[comment_col]]
-
             comment_idx = list(ledger.columns).index(comment_col)
-            ledger.insert(comment_idx + 1, 'RJ-Number', rj_numbers)
+
+            def _is_blank(v):
+                if pd.isna(v):
+                    return True
+                s = str(v).strip()
+                return s == '' or s.lower() in ('nan', 'none', 'nat')
+
+            if 'RJ-Number' not in ledger.columns:
+                ledger.insert(comment_idx + 1, 'RJ-Number', rj_numbers)
+            else:
+                existing = ledger['RJ-Number'].tolist()
+                filled = [new if _is_blank(old) else old for old, new in zip(existing, rj_numbers)]
+                ledger['RJ-Number'] = filled
 
             st.session_state.capitec_ledger = ledger
             st.session_state.capitec_ledger_cols_dirty = True
