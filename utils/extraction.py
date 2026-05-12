@@ -190,6 +190,25 @@ class ReferenceExtractor:
         if match:
             return cls.clean_name(match.group(2))
 
+        # Pattern 5: Reference number followed directly by name (no dash separator)
+        # Handles Capitec formats like:
+        #   "In CSH549976829 CashDepNcrJHBPlein" -> "CashDepNcrJHBPlein"
+        #   "Reversal CSH788669050 Sandton city 2" -> "Sandton city"
+        #   "In ECO927593925 N Ngwenya" -> "N Ngwenya"
+        match = re.search(r'(?:RJ|TX|CSH|ZVC|ECO|INN)\d{6,}\s+([A-Za-z][A-Za-z\s]*)', text, re.IGNORECASE)
+        if match:
+            return cls.clean_name(match.group(1))
+
+        # Pattern 6: Bank fees / charges / interest lines with no reference number
+        # Handles "Capitec Scented Serenade ZAR charges" -> "ZAR charges"
+        match = re.search(
+            r'\b(ZAR\s+charges?|bank\s+charges?|service\s+(?:fee|charge)s?|monthly\s+(?:fee|charge)s?|interest|fees?|charges?)\b',
+            text,
+            re.IGNORECASE,
+        )
+        if match:
+            return match.group(1)
+
         return ''
 
     @classmethod
