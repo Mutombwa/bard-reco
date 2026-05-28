@@ -10,11 +10,28 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from fuzzywuzzy import fuzz
+try:
+    from rapidfuzz import fuzz
+except ImportError:
+    from fuzzywuzzy import fuzz
 import sys
 import os
+import re
 
 logger = logging.getLogger(__name__)
+
+# Pre-compiled regex patterns for FNB reference extraction
+_FNB_RE_RJ = re.compile(r'(RJ|TX|CSH|ZVC|ECO|INN|EFT|IFX)[-]?(\d{6,})', re.IGNORECASE)
+_FNB_RE_SA_PAYOUT = re.compile(r'^([A-Z][A-Z\s]+?)\s+SA\s+PAYOUT', re.IGNORECASE)
+_FNB_RE_PAYREF = re.compile(r'Payment\s+Ref\s*[#:]+\s*([\w\s\-\.,&]+)', re.IGNORECASE)
+_FNB_RE_PAREN = re.compile(r'\(\s*([^)]+)\s*\)')
+_FNB_RE_REF_PREFIX = re.compile(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN|EFT|IFX)', re.IGNORECASE)
+_FNB_RE_EXCH = re.compile(r'EXch-(?:Sell|Buy)-[A-Z]+\d+\s*-\s*(\w+)', re.IGNORECASE)
+_FNB_RE_DASH = re.compile(r'-\s*(.+)')
+_FNB_RE_PAREN_IN = re.compile(r'\(\s*([^)]+)\s*\)')
+_FNB_RE_CAP_WORD = re.compile(r'^[A-Z][a-z]+$')
+_FNB_RE_ALLCAPS = re.compile(r'^[A-Z]+$')
+_FNB_RE_NAME_DIGITS = re.compile(r'^[A-Za-z\s]+\s+\d{10,}$')
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -424,7 +441,7 @@ class FNBWorkflow:
                                 result = result.strip()
                                 # Only remove trailing long numbers if there's a name before them
                                 # This preserves phone-only references like "0849667217"
-                                if re.match(r'^[A-Za-z\s]+\s+\d{10,}$', result):
+                                if _FNB_RE_NAME_DIGITS.match(result):
                                     result = re.sub(r'\s*\d{10,}$', '', result)
                                 return result
                         except (ValueError, TypeError, KeyError):
@@ -467,7 +484,7 @@ class FNBWorkflow:
                 name_words = []
                 for word in words:
                     # Look for capitalized words that could be names
-                    if re.match(r'^[A-Z][a-z]+$', word) or re.match(r'^[A-Z]+$', word):
+                    if _FNB_RE_CAP_WORD.match(word) or _FNB_RE_ALLCAPS.match(word):
                         name_words.append(word)
 
                 if name_words:
@@ -600,7 +617,6 @@ class FNBWorkflow:
     def rj_payment_ref_tool(self):
         """Generate RJ-Number and Payment Ref columns"""
         try:
-            import re
             ledger = st.session_state.fnb_ledger.copy()
 
             if len(ledger.columns) < 2:
@@ -616,68 +632,50 @@ class FNBWorkflow:
                 if not isinstance(comment, str):
                     return '', ''
 
-                # RJ-Number: look for RJ, TX, CSH, ZVC, ECO, INN, EFT, IFX followed by digits
-                # Patterns: RJ123456, TX123456, CSH764074250, ZVC128809565, ECO904183634, INN757797206
-                # Also handles: Reversal: (#Ref CSH767209773)
-                # NEW: Out: EFT217069916: EFT217069916, EXch-Sell-IFX20120260 - Senwes
-                rj_match = re.search(r'(RJ|TX|CSH|ZVC|ECO|INN|EFT|IFX)[-]?(\d{6,})', comment, re.IGNORECASE)
+                rj_match = _FNB_RE_RJ.search(comment)
                 rj = rj_match.group(0).replace('-', '').replace('#', '').upper() if rj_match else ''
 
                 payref = ''
-                
-                # Pattern 0: SA PAYOUT pattern - extract name before "SA PAYOUT"
-                # Handles: "BONGANI MPOFU SA PAYOUT @17.30 $1445", "LEONARD NGIRAZI SA PAYOUT $5276"
-                sa_payout_match = re.search(r'^([A-Z][A-Z\s]+?)\s+SA\s+PAYOUT', comment, re.IGNORECASE)
-                if sa_payout_match:
-                    payref = sa_payout_match.group(1).strip()
-                    # If no RJ number found from standard patterns, use the name as RJ
+
+                # Pattern 0: SA PAYOUT
+                sa_match = _FNB_RE_SA_PAYOUT.search(comment)
+                if sa_match:
+                    payref = sa_match.group(1).strip()
                     if not rj:
                         rj = payref
                     return rj, payref
-                
+
                 # Pattern 1: Explicit "Payment Ref #:" label
-                payref_match = re.search(r'Payment\s+Ref\s*[#:]+\s*([\w\s\-\.,&]+)', comment, re.IGNORECASE)
+                payref_match = _FNB_RE_PAYREF.search(comment)
                 if payref_match:
                     payref = payref_match.group(1).strip()
-                # Pattern 2: Parentheses format - "Ref CSH764074250 - (Phuthani mabhena)"
-                # But not if it's just the reference itself like "Reversal: (#Ref CSH767209773)"
-                elif re.search(r'\(\s*([^)]+)\s*\)', comment):
-                    paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
-                    paren_content = paren_match.group(1).strip()
-                    # Only use if it doesn't look like a reference (doesn't start with #Ref or Ref)
-                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN|EFT|IFX)', paren_content, re.IGNORECASE):
-                        payref = paren_content
-                # Pattern 3: EXch-Sell/EXch-Buy pattern - extract name after dash
-                # Handles: "EXch-Sell-IFX20120260 - Senwes"
-                elif re.search(r'EXch-(?:Sell|Buy)-[A-Z]+\d+\s*-\s*(\w+)', comment, re.IGNORECASE):
-                    exch_match = re.search(r'EXch-(?:Sell|Buy)-[A-Z]+\d+\s*-\s*(\w+)', comment, re.IGNORECASE)
-                    payref = exch_match.group(1).strip()
-                    # Also use the name as RJ if needed
-                    if not rj:
-                        rj = payref
-                # Pattern 4: After RJ/TX/CSH/EFT/IFX number
-                elif rj_match:
-                    after = comment[rj_match.end():]
-                    after = after.lstrip(' .:-#')
-                    # Check if there's a dash followed by text (handle "- Name" format)
-                    dash_match = re.search(r'-\s*(.+)', after)
-                    if dash_match:
-                        # Extract text after dash, handle parentheses if present
-                        text_after_dash = dash_match.group(1).strip()
-                        paren_in_dash = re.search(r'\(\s*([^)]+)\s*\)', text_after_dash)
-                        if paren_in_dash:
-                            payref = paren_in_dash.group(1).strip()
-                        else:
-                            # Don't split on dots to preserve names like "K.kwiyo"
-                            payref = re.split(r'[,\n\r]', text_after_dash)[0].strip()
-                    else:
-                        # Don't split on dots to preserve names like "K.kwiyo"
-                        payref = re.split(r'[,\n\r]', after)[0].strip()
-                    # Clean up trailing dots/spaces
-                    payref = payref.rstrip('. ')
                 else:
-                    # No RJ-Number found, use the whole comment as Payment Ref
-                    payref = comment.strip()
+                    paren_match = _FNB_RE_PAREN.search(comment)
+                    if paren_match:
+                        paren_content = paren_match.group(1).strip()
+                        if not _FNB_RE_REF_PREFIX.match(paren_content):
+                            payref = paren_content
+                    elif _FNB_RE_EXCH.search(comment):
+                        exch_match = _FNB_RE_EXCH.search(comment)
+                        payref = exch_match.group(1).strip()
+                        if not rj:
+                            rj = payref
+                    elif rj_match:
+                        after = comment[rj_match.end():]
+                        after = after.lstrip(' .:-#')
+                        dash_match = _FNB_RE_DASH.search(after)
+                        if dash_match:
+                            text_after_dash = dash_match.group(1).strip()
+                            paren_in_dash = _FNB_RE_PAREN_IN.search(text_after_dash)
+                            if paren_in_dash:
+                                payref = paren_in_dash.group(1).strip()
+                            else:
+                                payref = re.split(r'[,\n\r]', text_after_dash)[0].strip()
+                        else:
+                            payref = re.split(r'[,\n\r]', after)[0].strip()
+                        payref = payref.rstrip('. ')
+                    else:
+                        payref = comment.strip()
 
                 return rj, payref
 

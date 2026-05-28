@@ -16,12 +16,43 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from fuzzywuzzy import fuzz
+try:
+    from rapidfuzz import fuzz
+except ImportError:
+    from fuzzywuzzy import fuzz
 import sys
 import os
 import re
 
 logger = logging.getLogger(__name__)
+
+# Pre-compiled regex patterns for ABSA reference extraction (compiled once at module load)
+_RE_FEE = re.compile(r'\(\s*(\d+),(\d+)\s*\)')
+_RE_PROOF_OF_PAYMT = re.compile(r'^PROOF\s+OF\s+PAYMT\s+SMS\s*\(', re.IGNORECASE)
+_RE_PAYSHAP = re.compile(r'PayShap\s+Ext\s+Credit\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)', re.IGNORECASE)
+_RE_IMMEDIATE_TRF = re.compile(r'IMMEDIATE\s+TRF\s+CR\s+FIRSTRAND\s+([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+[A-Z0-9]{10}|$)', re.IGNORECASE)
+_RE_ACB_CREDIT = re.compile(r'ACB\s+CREDIT\s+(?:CAPITEC?|CAPITE[C]?)\s+([A-Z]\s+[A-Za-z]+)', re.IGNORECASE)
+_RE_IMDTE_DIGITAL = re.compile(r'IMDTE\s+DIGITAL\s+PMT\s+.*?ABSA\s+BANK\s+\S+\s+([A-Z0-9]{8,})', re.IGNORECASE)
+_RE_DIGITAL_PAYMENT = re.compile(r'DIGITAL\s+PAYMENT\s+(?:DT|CR)\s+.*?ABSA\s+BANK\s+([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+)*)', re.IGNORECASE)
+_RE_CREDIT_TRANSFER = re.compile(r'CREDIT\s+TRANSFER\s+(?:CASHFOCUS\s+)?(.+)', re.IGNORECASE)
+_RE_DEPOSIT_NO = re.compile(r'DEPOSIT\s+NO\s*:\s*([a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*?)(?:\s+CONTACT\s*:|$)', re.IGNORECASE)
+_RE_ABSA_BANK = re.compile(r'ABSA\s+BANK\s+([A-Za-z0-9][a-zA-Z0-9]+(?:\s+[A-Za-z0-9][a-zA-Z0-9]+)*)', re.IGNORECASE)
+_RE_CONTACT = re.compile(r'CONTACT\s*:\s*(\d+)', re.IGNORECASE)
+
+# Pre-compiled patterns for ledger reference extraction
+_RE_RJ_PATTERN = re.compile(r'Ref\s+#RJ\d+\.?\s*-\s*(?:Ref\s+#RJ\d+\.?\s*-\s*)?(.+)', re.IGNORECASE)
+_RE_DEPOSIT_NO_LEDGER = re.compile(r'DEPOSIT\s+NO\s*:\s*([a-zA-Z0-9]+)', re.IGNORECASE)
+_RE_CONTACT_10 = re.compile(r'CONTACT\s*:\s*(\d{10})', re.IGNORECASE)
+_RE_CAPITALIZED_WORD = re.compile(r'^[A-Z][a-z]+$')
+_RE_ALL_CAPS_WORD = re.compile(r'^[A-Z]+$')
+
+# Pre-compiled patterns for RJ/Payment Ref extraction
+_RE_RJ_NUMBER = re.compile(r'(RJ|TX|CSH|ZVC|ECO|INN)[-]?(\d{6,})', re.IGNORECASE)
+_RE_PAYREF_LABEL = re.compile(r'Payment\s+Ref\s*[#:]+\s*([\w\s\-\.,&]+)', re.IGNORECASE)
+_RE_PAREN_CONTENT = re.compile(r'\(\s*([^)]+)\s*\)')
+_RE_REF_PREFIX = re.compile(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', re.IGNORECASE)
+_RE_DASH_TEXT = re.compile(r'-\s*(.+)')
+_RE_PAREN_IN_TEXT = re.compile(r'\(\s*([^)]+)\s*\)')
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -325,100 +356,59 @@ class ABSAWorkflow:
                 return
 
             def extract_absa_data(description):
-                """
-                Extract Reference and Fee from ABSA description
-                
-                Returns: (reference, fee)
-                """
+                """Extract Reference and Fee from ABSA description using pre-compiled regexes."""
                 desc = str(description).strip()
-                
-                # Extract Fee - Format: ( 5,49 ) where comma is decimal separator
-                # Pattern: ( followed by digits, comma, digits, close paren
-                fee_pattern = r'\(\s*(\d+),(\d+)\s*\)'
-                fee_match = re.search(fee_pattern, desc)
-                
-                if fee_match:
-                    # fee_match.group(1) = rand (e.g., "5")
-                    # fee_match.group(2) = cents (e.g., "49")
-                    rand = fee_match.group(1)
-                    cents = fee_match.group(2)
-                    # Convert to decimal: 5,49 = 5.49
-                    fee = float(f"{rand}.{cents}")
-                else:
-                    fee = 0.0
-                
-                # Extract Reference - Multiple ABSA patterns:
-                # Examples:
-                # - "ACB CREDIT CAPITEC K KWIYO" -> "K KWIYO"
-                # - "PayShap Ext Credit P NCUBE" -> "P NCUBE"
-                # - "PayShap Ext Credit S MOYO" -> "S MOYO"
-                # - "DIGITAL PAYMENT CR ABSA BANK Dumi" -> "Dumi"
-                # - "DEPOSIT NO : linda" -> "linda"
-                # - "STAMPED STATEMENT ( 13,00 )" -> "" (no reference)
-                
+
+                # Extract Fee using pre-compiled pattern
+                fee_match = _RE_FEE.search(desc)
+                fee = float(f"{fee_match.group(1)}.{fee_match.group(2)}") if fee_match else 0.0
+
+                # Extract Reference using pre-compiled patterns (ordered by specificity)
                 reference = "UNKNOWN"
-                
-                # Check if it's STAMPED STATEMENT (no reference, only fee)
+
                 if 'STAMPED STATEMENT' in desc.upper():
                     reference = ""
+                elif _RE_PROOF_OF_PAYMT.match(desc):
+                    reference = ""
                 else:
-                    # Try pattern 1: PayShap Ext Credit followed by name
-                    # Matches: "PayShap Ext Credit Nomatemba", "PayShap Ext Credit K KWIYO", "PayShap Ext Credit P NCUBE"
-                    # Pattern: Captures any name after PayShap Ext Credit
-                    payshap_pattern = r'PayShap\s+Ext\s+Credit\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)'
-                    payshap_match = re.search(payshap_pattern, desc, re.IGNORECASE)
-                    
-                    if payshap_match:
-                        reference = payshap_match.group(1).strip()
+                    m = _RE_PAYSHAP.search(desc)
+                    if m:
+                        reference = m.group(1).strip()
                     else:
-                        # Try pattern 2: IMMEDIATE TRF CR FIRSTRAND followed by name
-                        # Matches: "IMMEDIATE TRF CR FIRSTRAND Mehluli Nkomo 05LBW8SRGP"
-                        # Pattern: Captures name until 10-char alphanumeric code or end
-                        immediate_pattern = r'IMMEDIATE\s+TRF\s+CR\s+FIRSTRAND\s+([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+[A-Z0-9]{10}|$)'
-                        immediate_match = re.search(immediate_pattern, desc, re.IGNORECASE)
-                        
-                        if immediate_match:
-                            reference = immediate_match.group(1).strip()
+                        m = _RE_IMMEDIATE_TRF.search(desc)
+                        if m:
+                            reference = m.group(1).strip()
                         else:
-                            # Try pattern 3: ACB CREDIT CAPITEC followed by name
-                            # Matches: "ACB CREDIT CAPITEC K KWIYO"
-                            # Pattern: Captures first letter + space + word (e.g., "K KWIYO")
-                            acb_pattern = r'ACB\s+CREDIT\s+(?:CAPITEC?|CAPITE[C]?)\s+([A-Z]\s+[A-Za-z]+)'
-                            acb_match = re.search(acb_pattern, desc, re.IGNORECASE)
-                            
-                            if acb_match:
-                                reference = acb_match.group(1).strip().upper()
+                            m = _RE_ACB_CREDIT.search(desc)
+                            if m:
+                                reference = m.group(1).strip().upper()
                             else:
-                                # Try pattern 5: DIGITAL PAYMENT CR ABSA BANK followed by name
-                                # Matches: "DIGITAL PAYMENT CR ABSA BANK Dumi"
-                                digital_pattern = r'DIGITAL\s+PAYMENT\s+CR\s+ABSA\s+BANK\s+([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)'
-                                digital_match = re.search(digital_pattern, desc, re.IGNORECASE)
-                                
-                                if digital_match:
-                                    reference = digital_match.group(1).strip()
+                                m = _RE_IMDTE_DIGITAL.search(desc)
+                                if m:
+                                    reference = m.group(1).strip()
                                 else:
-                                    # Try pattern 7: DEPOSIT NO
-                                    # Matches: "DEPOSIT NO : linda" or "DEPOSIT NO : nama twin"
-                                    # Pattern captures multiple words until CONTACT or end
-                                    ref_pattern = r'DEPOSIT\s+NO\s*:\s*([a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*?)(?:\s+CONTACT\s*:|$)'
-                                    ref_match = re.search(ref_pattern, desc, re.IGNORECASE)
-                                    
-                                    if ref_match:
-                                        reference = ref_match.group(1).strip()
+                                    m = _RE_DIGITAL_PAYMENT.search(desc)
+                                    if m:
+                                        tokens = m.group(1).strip().split()
+                                        reference = tokens[-1] if tokens else m.group(1).strip()
                                     else:
-                                        # Try pattern 9: ABSA BANK followed by name
-                                        absa_pattern = r'ABSA\s+BANK\s+([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)'
-                                        absa_match = re.search(absa_pattern, desc, re.IGNORECASE)
-                                        
-                                        if absa_match:
-                                            reference = absa_match.group(1).strip()
+                                        m = _RE_CREDIT_TRANSFER.search(desc)
+                                        if m:
+                                            reference = m.group(1).strip()
                                         else:
-                                            # Fallback: try CONTACT pattern
-                                            contact_pattern = r'CONTACT\s*:\s*(\d+)'
-                                            contact_match = re.search(contact_pattern, desc, re.IGNORECASE)
-                                            if contact_match:
-                                                reference = contact_match.group(1).strip()
-                
+                                            m = _RE_DEPOSIT_NO.search(desc)
+                                            if m:
+                                                reference = m.group(1).strip()
+                                            else:
+                                                m = _RE_ABSA_BANK.search(desc)
+                                                if m:
+                                                    tokens = m.group(1).strip().split()
+                                                    reference = tokens[-1] if tokens else m.group(1).strip()
+                                                else:
+                                                    m = _RE_CONTACT.search(desc)
+                                                    if m:
+                                                        reference = m.group(1).strip()
+
                 return reference, fee
 
             # Apply extraction to all descriptions
@@ -494,48 +484,24 @@ class ABSAWorkflow:
                 return
 
             def extract_reference_name(description):
-                """Extract reference names from descriptions
-                Example: 'Ref #RJ55909152420. - K.kwiyo' -> 'K.kwiyo'
-                Example: 'Ref #RJ55909152420. - Ref #RJ55909152420. - K.kwiyo' -> 'K.kwiyo'
-                """
+                """Extract reference names using pre-compiled regexes."""
                 desc = str(description).strip()
 
-                # Pattern 1: RJ number followed by dash and name (handles repeated RJ patterns)
-                # Match: "Ref #RJxxxxxxx" followed by "- Name" (capture everything after the last dash)
-                # Use greedy match .+ to capture everything including dots
-                rj_pattern = r'Ref\s+#RJ\d+\.?\s*-\s*(?:Ref\s+#RJ\d+\.?\s*-\s*)?(.+)'
-                rj_match = re.search(rj_pattern, desc, re.IGNORECASE)
-                
-                if rj_match:
-                    reference = rj_match.group(1).strip()
-                    # Clean up: remove trailing dots or spaces
-                    reference = reference.rstrip('. ')
-                    return reference
+                m = _RE_RJ_PATTERN.search(desc)
+                if m:
+                    return m.group(1).strip().rstrip('. ')
 
-                # Pattern 2: Other patterns
-                patterns = [
-                    (r'^\d{10}$', lambda m: m.group(0)),
-                    (r'DEPOSIT\s+NO\s*:\s*([a-zA-Z0-9]+)', lambda m: m.group(1).strip()),
-                    (r'CONTACT\s*:\s*(\d{10})', lambda m: m.group(1)),
-                    (r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[a-z]+)$', lambda m: m.group(1).strip()),
-                ]
+                m = _RE_DEPOSIT_NO_LEDGER.search(desc)
+                if m:
+                    return m.group(1).strip()
 
-                for pattern, extractor in patterns:
-                    match = re.search(pattern, desc, re.IGNORECASE)
-                    if match:
-                        try:
-                            result = extractor(match)
-                            if result:
-                                return result.strip()
-                        except (ValueError, TypeError, KeyError):
-                            continue
+                m = _RE_CONTACT_10.search(desc)
+                if m:
+                    return m.group(1)
 
                 # Fallback: extract capitalized words
                 words = desc.split()
-                name_words = []
-                for word in words:
-                    if re.match(r'^[A-Z][a-z]+$', word) or re.match(r'^[A-Z]+$', word):
-                        name_words.append(word)
+                name_words = [w for w in words if _RE_CAPITALIZED_WORD.match(w) or _RE_ALL_CAPS_WORD.match(w)]
 
                 if name_words:
                     return ' '.join(name_words[-2:]) if len(name_words) >= 2 else name_words[-1]
@@ -566,7 +532,6 @@ class ABSAWorkflow:
     def rj_payment_ref_tool(self):
         """Generate RJ-Number and Payment Ref columns"""
         try:
-            import re
             ledger = st.session_state.absa_ledger.copy()
 
             if len(ledger.columns) < 2:
@@ -581,47 +546,39 @@ class ABSAWorkflow:
                 if not isinstance(comment, str):
                     return '', ''
 
-                # RJ-Number: look for RJ, TX, CSH, ZVC, ECO, INN followed by digits
-                # Patterns: RJ123456, TX123456, CSH764074250, ZVC128809565, ECO904183634, INN757797206
-                # Also handles: Reversal: (#Ref CSH767209773)
-                rj_match = re.search(r'(RJ|TX|CSH|ZVC|ECO|INN)[-]?(\d{6,})', comment, re.IGNORECASE)
+                # RJ-Number using pre-compiled pattern
+                rj_match = _RE_RJ_NUMBER.search(comment)
                 rj = rj_match.group(0).replace('-', '').replace('#', '').upper() if rj_match else ''
 
                 payref = ''
                 # Pattern 1: Explicit "Payment Ref #:" label
-                payref_match = re.search(r'Payment\s+Ref\s*[#:]+\s*([\w\s\-\.,&]+)', comment, re.IGNORECASE)
+                payref_match = _RE_PAYREF_LABEL.search(comment)
                 if payref_match:
                     payref = payref_match.group(1).strip()
-                # Pattern 2: Parentheses format - "Ref CSH764074250 - (Phuthani mabhena)"
-                # But not if it's just the reference itself like "Reversal: (#Ref CSH767209773)"
-                elif re.search(r'\(\s*([^)]+)\s*\)', comment):
-                    paren_match = re.search(r'\(\s*([^)]+)\s*\)', comment)
-                    paren_content = paren_match.group(1).strip()
-                    # Only use if it doesn't look like a reference (doesn't start with #Ref or Ref)
-                    if not re.match(r'#?Ref\s+(RJ|TX|CSH|ZVC|ECO|INN)', paren_content, re.IGNORECASE):
-                        payref = paren_content
-                # Pattern 3: After RJ/TX/CSH number
-                elif rj_match:
-                    after = comment[rj_match.end():]
-                    after = after.lstrip(' .:-#')
-                    # Check if there's a dash followed by text (handle "- Name" format)
-                    dash_match = re.search(r'-\s*(.+)', after)
-                    if dash_match:
-                        # Extract text after dash, handle parentheses if present
-                        text_after_dash = dash_match.group(1).strip()
-                        paren_in_dash = re.search(r'\(\s*([^)]+)\s*\)', text_after_dash)
-                        if paren_in_dash:
-                            payref = paren_in_dash.group(1).strip()
-                        else:
-                            # Don't split on dots to preserve names like "K.kwiyo"
-                            payref = re.split(r'[,\n\r]', text_after_dash)[0].strip()
-                    else:
-                        # Don't split on dots to preserve names like "K.kwiyo"
-                        payref = re.split(r'[,\n\r]', after)[0].strip()
-                    # Clean up trailing dots/spaces
-                    payref = payref.rstrip('. ')
                 else:
-                    payref = comment.strip()
+                    # Pattern 2: Parentheses format
+                    paren_match = _RE_PAREN_CONTENT.search(comment)
+                    if paren_match:
+                        paren_content = paren_match.group(1).strip()
+                        if not _RE_REF_PREFIX.match(paren_content):
+                            payref = paren_content
+                    # Pattern 3: After RJ/TX/CSH number
+                    elif rj_match:
+                        after = comment[rj_match.end():]
+                        after = after.lstrip(' .:-#')
+                        dash_match = _RE_DASH_TEXT.search(after)
+                        if dash_match:
+                            text_after_dash = dash_match.group(1).strip()
+                            paren_in_dash = _RE_PAREN_IN_TEXT.search(text_after_dash)
+                            if paren_in_dash:
+                                payref = paren_in_dash.group(1).strip()
+                            else:
+                                payref = re.split(r'[,\n\r]', text_after_dash)[0].strip()
+                        else:
+                            payref = re.split(r'[,\n\r]', after)[0].strip()
+                        payref = payref.rstrip('. ')
+                    else:
+                        payref = comment.strip()
 
                 return rj, payref
 

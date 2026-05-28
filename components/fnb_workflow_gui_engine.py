@@ -331,9 +331,9 @@ class GUIReconciliationEngine:
             use_credits_only = False
             use_both_debit_credit = True
 
-        # Make copies
-        ledger = ledger_df.copy()
-        statement = statement_df.copy()
+        # Use the already-cleaned copies from _validate_and_clean_data
+        ledger = ledger_df
+        statement = statement_df
 
         # Use normalized date columns for comparison if they exist (keep originals for display)
         date_ledger_cmp = f'_normalized_{date_ledger}' if f'_normalized_{date_ledger}' in ledger.columns else date_ledger
@@ -744,6 +744,10 @@ class GUIReconciliationEngine:
                             best_score = ref_score
                             best_ledger_idx = lidx
                             best_ledger_row = ledger_row
+
+                            # Early termination: near-perfect match found
+                            if best_score >= 95:
+                                break
             elif match_references:
                 # LOOPHOLE FIX: If matching references is enabled but statement has no valid reference,
                 # DO NOT match - leave as unmatched. Same amount/date with no reference = no match.
@@ -779,101 +783,94 @@ class GUIReconciliationEngine:
                                 use_debits_only, use_credits_only, use_both_debit_credit):
         """
         Phase 1.5: Foreign Credits (>10,000) - Amount/Date only matching.
-
-        This mirrors GUI lines 10328-10430.
+        OPTIMIZED: Uses global indexes for O(1) amount lookups instead of O(n*m) nested loops.
         """
         foreign_credits_matches = []
         foreign_matched_stmt = set()
         foreign_matched_ledger = set()
 
-        remaining_statement = statement.loc[unmatched_statement].copy()
-        remaining_ledger = ledger.drop(list(ledger_matched)).copy()
+        # Use views instead of copies
+        remaining_stmt_indices = [idx for idx in unmatched_statement if idx not in foreign_matched_stmt]
 
-        for stmt_idx, stmt_row in remaining_statement.iterrows():
-            if stmt_idx in foreign_matched_stmt:
-                continue
+        for stmt_idx in remaining_stmt_indices:
+            stmt_row = statement.loc[stmt_idx]
 
             stmt_date = stmt_row[date_statement] if (match_dates and date_statement in statement.columns) else None
-            stmt_amt = stmt_row[amt_statement] if amt_statement in statement.columns else 0
+            try:
+                stmt_amt = float(stmt_row[amt_statement]) if amt_statement in statement.columns else 0
+            except (TypeError, ValueError):
+                continue
 
             # Only process amounts > 10,000
             if abs(stmt_amt) <= 10000:
+                continue
+
+            # Use global amount index for O(1) lookup instead of scanning all ledger rows
+            amt_key = round(abs(stmt_amt), 2)
+            amount_candidates = self.ledger_by_amount.get(amt_key, [])
+
+            if not amount_candidates:
                 continue
 
             best_score = -1
             best_ledger_idx = None
             best_ledger_row = None
 
-            for ledger_idx, ledger_row in remaining_ledger.iterrows():
-                if ledger_idx in foreign_matched_ledger:
+            for ledger_idx, amt_type in amount_candidates:
+                # Skip already matched
+                if ledger_idx in ledger_matched or ledger_idx in foreign_matched_ledger:
                     continue
+
+                # Check amount type matches mode
+                if use_debits_only and amt_type != 'debit':
+                    continue
+                if use_credits_only and amt_type != 'credit':
+                    continue
+                if use_both_debit_credit:
+                    if stmt_amt >= 0 and amt_type != 'debit':
+                        continue
+                    elif stmt_amt < 0 and amt_type != 'credit':
+                        continue
 
                 # Date match
                 date_match = True
                 if match_dates and stmt_date and date_ledger in ledger.columns:
-                    ledger_date = ledger_row[date_ledger]
+                    ledger_date = ledger.loc[ledger_idx, date_ledger]
                     date_match = (stmt_date == ledger_date)
 
-                # Amount match with flexible debit/credit logic
-                amount_match = False
+                if not date_match:
+                    continue
 
-                if use_debits_only and amt_ledger_debit in ledger.columns:
-                    try:
-                        ledger_amt = float(ledger_row[amt_ledger_debit])
-                        amount_match = (abs(ledger_amt) == abs(stmt_amt))
-                    except (TypeError, ValueError):
-                        ledger_amt = 0
-                elif use_credits_only and amt_ledger_credit in ledger.columns:
-                    try:
-                        ledger_amt = float(ledger_row[amt_ledger_credit])
-                        amount_match = (abs(ledger_amt) == abs(stmt_amt))
-                    except (TypeError, ValueError):
-                        ledger_amt = 0
-                else:  # use_both_debit_credit
-                    if stmt_amt >= 0 and amt_ledger_debit in ledger.columns:
-                        try:
-                            ledger_amt = float(ledger_row[amt_ledger_debit])
-                            amount_match = (abs(ledger_amt) == abs(stmt_amt) and ledger_amt >= 0)
-                        except (TypeError, ValueError):
-                            ledger_amt = 0
-                    elif stmt_amt < 0 and amt_ledger_credit in ledger.columns:
-                        try:
-                            ledger_amt = float(ledger_row[amt_ledger_credit])
-                            amount_match = (abs(ledger_amt) == abs(stmt_amt) and ledger_amt >= 0)
-                        except (TypeError, ValueError):
-                            ledger_amt = 0
+                score = 50  # amount matched
+                if match_dates and date_match:
+                    score = 100
 
-                    # Fallback: try other column
-                    if not amount_match:
-                        if amt_ledger_credit in ledger.columns:
-                            try:
-                                ledger_amt = float(ledger_row[amt_ledger_credit])
-                                if abs(ledger_amt) == abs(stmt_amt) and ledger_amt >= 0:
-                                    amount_match = True
-                            except (TypeError, ValueError):
-                                pass
-                        if not amount_match and amt_ledger_debit in ledger.columns:
-                            try:
-                                ledger_amt = float(ledger_row[amt_ledger_debit])
-                                if abs(ledger_amt) == abs(stmt_amt) and ledger_amt >= 0:
-                                    amount_match = True
-                            except (TypeError, ValueError):
-                                pass
+                if score > best_score:
+                    best_score = score
+                    best_ledger_idx = ledger_idx
+                    best_ledger_row = ledger.loc[ledger_idx]
 
-                if amount_match and date_match:
-                    score = 0
-                    if match_dates and date_match:
-                        score += 50
-                    if amount_match:
-                        score += 50
+                    # Early exit on perfect score
+                    if best_score == 100:
+                        break
 
-                    if not match_dates:
-                        score = 50
+            # Fallback: try other amount column if use_both and no match yet
+            if best_ledger_idx is None and use_both_debit_credit:
+                # Try opposite type
+                for ledger_idx, amt_type in amount_candidates:
+                    if ledger_idx in ledger_matched or ledger_idx in foreign_matched_ledger:
+                        continue
 
-                    if score > best_score:
-                        best_score = score
+                    date_match = True
+                    if match_dates and stmt_date and date_ledger in ledger.columns:
+                        ledger_date = ledger.loc[ledger_idx, date_ledger]
+                        date_match = (stmt_date == ledger_date)
+
+                    if date_match:
+                        best_score = 100 if match_dates else 50
                         best_ledger_idx = ledger_idx
-                        best_ledger_row = ledger_row
+                        best_ledger_row = ledger.loc[ledger_idx]
+                        break
 
             # Require at least amount match
             if best_ledger_idx is not None and best_score >= 50:
@@ -905,11 +902,12 @@ class GUIReconciliationEngine:
         """
         split_matches = []
 
-        # Update remaining items
+        # Update remaining items (use views, not copies)
         final_unmatched = [idx for idx in unmatched_statement if idx not in foreign_matched_stmt]
-        remaining_statement = statement.loc[final_unmatched].copy()
+        remaining_statement = statement.loc[final_unmatched]
         all_matched_ledger = ledger_matched.union(foreign_matched_ledger)
-        remaining_ledger = ledger.drop(list(all_matched_ledger)).copy()
+        remaining_ledger_idx = [idx for idx in ledger.index if idx not in all_matched_ledger]
+        remaining_ledger = ledger.loc[remaining_ledger_idx]
 
         split_matched_stmt = set()
         split_matched_ledger = set()
@@ -1240,13 +1238,14 @@ class GUIReconciliationEngine:
         """
         one_to_many_matches = []
 
-        # Get remaining items
+        # Get remaining items (use views, not copies)
         all_matched_ledger = ledger_matched.union(foreign_matched_ledger).union(split_matched_ledger)
-        remaining_ledger = ledger.drop(list(all_matched_ledger)).copy()
+        remaining_ledger_idx = [idx for idx in ledger.index if idx not in all_matched_ledger]
+        remaining_ledger = ledger.loc[remaining_ledger_idx]
 
         all_matched_stmt = foreign_matched_stmt.union(split_matched_stmt)
         final_unmatched_stmt = [idx for idx in unmatched_statement if idx not in all_matched_stmt]
-        remaining_statement = statement.loc[final_unmatched_stmt].copy()
+        remaining_statement = statement.loc[final_unmatched_stmt]
 
         # Skip if not enough items
         if len(remaining_ledger) < 1 or len(remaining_statement) < 2:
@@ -1650,11 +1649,11 @@ class GUIReconciliationEngine:
         
         # UNMATCHED LEDGER: All ledger rows NOT in matched set
         unmatched_ledger_indices = [idx for idx in ledger.index if idx not in all_matched_ledger_indices]
-        unmatched_ledger_df = ledger.loc[unmatched_ledger_indices].copy() if unmatched_ledger_indices else pd.DataFrame()
-        
+        unmatched_ledger_df = ledger.loc[unmatched_ledger_indices] if unmatched_ledger_indices else pd.DataFrame()
+
         # UNMATCHED STATEMENT: All statement rows NOT in matched set
         unmatched_stmt_indices = [idx for idx in statement.index if idx not in all_matched_stmt_indices]
-        unmatched_statement_df = statement.loc[unmatched_stmt_indices].copy() if unmatched_stmt_indices else pd.DataFrame()
+        unmatched_statement_df = statement.loc[unmatched_stmt_indices] if unmatched_stmt_indices else pd.DataFrame()
 
         # Clean up: Remove normalized columns and ensure original dates are shown
         # Keep _original_ columns for export but remove _normalized_ columns from display

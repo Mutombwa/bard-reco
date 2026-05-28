@@ -289,16 +289,33 @@ def show_main_app():
     # Show workflows page directly
     show_workflows_page()
 
+def _get_workflow_instances():
+    """Cache workflow instances in session state to avoid re-creating on every render."""
+    if '_workflow_instances' not in st.session_state:
+        from components.fnb_workflow import FNBWorkflow
+        from components.absa_workflow import ABSAWorkflow
+        from components.kazang_workflow import KazangWorkflow
+        from components.bidvest_workflow import BidvestWorkflow
+        from components.corporate_workflow import CorporateWorkflow
+        from components.fix_ledger_workflow import FixLedgerWorkflow
+        from components.capitec_workflow import CapitecWorkflow
+
+        st.session_state._workflow_instances = {
+            'fnb': FNBWorkflow(),
+            'absa': ABSAWorkflow(),
+            'kazang': KazangWorkflow(),
+            'capitec': CapitecWorkflow(),
+            'bidvest': BidvestWorkflow(),
+            'corporate': CorporateWorkflow(),
+            'fix_ledger': FixLedgerWorkflow(),
+        }
+    return st.session_state._workflow_instances
+
+
 def show_workflows_page():
     """Specialized workflows page - Display all workflows"""
 
-    from components.fnb_workflow import FNBWorkflow
-    from components.absa_workflow import ABSAWorkflow
-    from components.kazang_workflow import KazangWorkflow
-    from components.bidvest_workflow import BidvestWorkflow
-    from components.corporate_workflow import CorporateWorkflow
-    from components.fix_ledger_workflow import FixLedgerWorkflow
-    from components.capitec_workflow import CapitecWorkflow
+    workflows = _get_workflow_instances()
 
     st.markdown("""
     <div class="gradient-header">
@@ -313,37 +330,37 @@ def show_workflows_page():
     with workflow_tabs[0]:
         st.markdown("### 🏦 FNB Bank Reconciliation")
         st.markdown("---")
-        FNBWorkflow().render()
+        workflows['fnb'].render()
 
     with workflow_tabs[1]:
         st.markdown("### 🏦 ABSA Bank Reconciliation")
         st.markdown("---")
-        ABSAWorkflow().render()
+        workflows['absa'].render()
 
     with workflow_tabs[2]:
         st.markdown("### 💳 Kazang Reconciliation")
         st.markdown("---")
-        KazangWorkflow().render()
+        workflows['kazang'].render()
 
     with workflow_tabs[3]:
         st.markdown("### 🏦 Capitec Bank Reconciliation")
         st.markdown("---")
-        CapitecWorkflow().render()
+        workflows['capitec'].render()
 
     with workflow_tabs[4]:
         st.markdown("### 💼 Bidvest Settlement Reconciliation")
         st.markdown("---")
-        BidvestWorkflow().render()
+        workflows['bidvest'].render()
 
     with workflow_tabs[5]:
         st.markdown("### 🏢 Corporate Settlement Reconciliation")
         st.markdown("---")
-        CorporateWorkflow().render()
+        workflows['corporate'].render()
 
     with workflow_tabs[6]:
         st.markdown("### 🔧 Fix Ledger - Enrich with TX Report")
         st.markdown("---")
-        FixLedgerWorkflow().render()
+        workflows['fix_ledger'].render()
 
 def show_reconciliation_page():
     """Reconciliation workflow page"""
