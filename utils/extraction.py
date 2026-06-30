@@ -176,28 +176,38 @@ class ReferenceExtractor:
                 return cleaned
 
         # Pattern 2: Look for ". - Name" format
-        match = re.search(r'\.\s*-\s*([A-Za-z][A-Za-z\s]*)', text)
+        match = re.search(r'\.\s*-\s*([A-Za-z][A-Za-z0-9.\-\s]*)', text)
         if match:
             return cls.clean_name(match.group(1))
 
         # Pattern 3: Look for "- Name" format (dash followed by space and name)
-        match = re.search(r'[-–]\s+([A-Za-z][A-Za-z\s]*)', text)
+        match = re.search(r'[-–]\s+([A-Za-z][A-Za-z0-9.\-\s]*)', text)
         if match:
             return cls.clean_name(match.group(1))
 
         # Pattern 4: After reference number with dash
-        match = re.search(r'(RJ|TX|CSH|ZVC|ECO|INN)\d+\.?\s*-\s*([A-Za-z][A-Za-z\s]*)', text, re.IGNORECASE)
+        match = re.search(r'(RJ|TX|CSH|ZVC|ECO|INN)\d+\.?\s*-\s*([A-Za-z][A-Za-z0-9.\-\s]*)', text, re.IGNORECASE)
         if match:
             return cls.clean_name(match.group(2))
 
         # Pattern 5: Reference number followed directly by name (no dash separator)
         # Handles Capitec formats like:
         #   "In CSH549976829 CashDepNcrJHBPlein" -> "CashDepNcrJHBPlein"
-        #   "Reversal CSH788669050 Sandton city 2" -> "Sandton city"
+        #   "In CSH930723663 L.Malinga-Scott" -> "L.Malinga-Scott"
+        #   "In CSH060773276 U88" -> "U88"
         #   "In ECO927593925 N Ngwenya" -> "N Ngwenya"
-        match = re.search(r'(?:RJ|TX|CSH|ZVC|ECO|INN)\d{6,}\s+([A-Za-z][A-Za-z\s]*)', text, re.IGNORECASE)
+        match = re.search(r'(?:RJ|TX|CSH|ZVC|ECO|INN)\d{6,}\s+([A-Za-z][A-Za-z0-9.\-\s]*)', text, re.IGNORECASE)
         if match:
             return cls.clean_name(match.group(1))
+
+        # Pattern 5b: No reference number — extract leading word(s) before amount/@ marker
+        # Handles: "GIVEMORE 1750 @17,3" -> "GIVEMORE"
+        if not re.search(cls.ALL_PATTERNS, text, re.IGNORECASE):
+            match = re.match(r'^([A-Za-z][A-Za-z\s]*?)\s+\d', text.strip())
+            if match:
+                name = match.group(1).strip()
+                if name and len(name) >= 2:
+                    return name
 
         # Pattern 6: Bank fees / charges / interest lines with no reference number
         # Handles "Capitec Scented Serenade ZAR charges" -> "ZAR charges"
@@ -229,6 +239,42 @@ class ReferenceExtractor:
         rj = cls.extract_rj_number(text)
         ref = cls.extract_payment_ref(text)
         return rj, ref
+
+    # Pre-compiled patterns for statement reference normalization
+    _RE_PAYSHAP = re.compile(r'^PayShap\s*Received\s+', re.IGNORECASE)
+    _RE_CASH_DEP = re.compile(
+        r'^(?:ATM\s+)?Cash\s*Dep(?:osit)?\s*(?:DNR|DSR|NCR|NRC)?\s*',
+        re.IGNORECASE,
+    )
+    _RE_ATM_SELF = re.compile(r'^ATM Cash Deposit \(own ATM\)$', re.IGNORECASE)
+
+    @classmethod
+    def normalize_statement_ref(cls, ref: str) -> str:
+        """
+        Normalize a Capitec bank statement reference for matching.
+
+        Strips common prefixes so the core name/location can match the ledger:
+          - "PayShapReceived Mellisa"          -> "Mellisa"
+          - "Cash Dep DNR Kyalami on Main"     -> "Kyalami on Main"
+          - "ATM Cash Deposit (own ATM)"       -> ""  (self-reference, no info)
+          - "Cash Dep DSR JHB Braamftn5"       -> "JHB Braamftn5"
+        """
+        if not ref or not isinstance(ref, str):
+            return ''
+
+        ref = ref.strip()
+
+        # Self-referencing ATM description — no useful info
+        if cls._RE_ATM_SELF.match(ref):
+            return ''
+
+        # Strip PayShapReceived prefix
+        ref = cls._RE_PAYSHAP.sub('', ref)
+
+        # Strip Cash Dep / ATM Cash Deposit + direction prefix
+        ref = cls._RE_CASH_DEP.sub('', ref)
+
+        return ref.strip()
 
     @classmethod
     def extract_from_description(cls, description: str) -> str:

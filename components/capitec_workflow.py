@@ -293,6 +293,18 @@ class CapitecWorkflow:
             if st.button("Extract RJ Number", key='capitec_rj_number_btn', width="stretch"):
                 self.extract_rj_number()
 
+        # Row 2: Statement normalization
+        st.markdown("---")
+        col3, col4 = st.columns(2)
+
+        with col3:
+            st.markdown("**Normalize Statement References**")
+            st.caption("Strip PayShapReceived / Cash Dep / ATM prefixes from Statement Reference column")
+            if st.session_state.get('capitec_stmt_normalized', False):
+                st.success("Statement references normalized")
+            if st.button("Normalize References", key='capitec_normalize_stmt_btn', width="stretch"):
+                self.normalize_statement_references()
+
     def extract_capitec_payment_ref(self):
         """
         Extract Payment Ref from Capitec Ledger Comment column using unified ReferenceExtractor.
@@ -328,12 +340,15 @@ class CapitecWorkflow:
                     return
 
             # Apply extraction using unified ReferenceExtractor
+            # Also normalize extracted refs (strip Cash Dep / ATM prefixes)
             payment_refs = []
             rj_numbers = []
 
             for val in ledger[comment_col]:
                 rj, payref = ReferenceExtractor.extract_rj_and_ref(str(val) if pd.notna(val) else '')
-                payment_refs.append(payref)
+                # Normalize: strip Cash Dep/ATM prefixes from extracted payment refs
+                normalized = ReferenceExtractor.normalize_statement_ref(payref)
+                payment_refs.append(normalized if normalized else payref)
                 rj_numbers.append(rj)
 
             comment_idx = list(ledger.columns).index(comment_col)
@@ -453,6 +468,62 @@ class CapitecWorkflow:
         except Exception as e:
             st.error(f"Error extracting RJ numbers: {str(e)}")
 
+    def normalize_statement_references(self):
+        """Normalize Capitec statement references by stripping common prefixes."""
+        try:
+            if st.session_state.capitec_statement is None:
+                st.error("Please import a statement first!")
+                return
+
+            statement = st.session_state.capitec_statement.copy()
+
+            # Find Reference column (case-insensitive)
+            ref_col = None
+            for col in statement.columns:
+                if str(col).strip().lower() in ['reference', 'ref', 'references']:
+                    ref_col = col
+                    break
+
+            if ref_col is None:
+                st.error("No Reference column found in statement")
+                return
+
+            original_refs = statement[ref_col].fillna('').astype(str).tolist()
+            normalized = [ReferenceExtractor.normalize_statement_ref(r) for r in original_refs]
+
+            # Insert Normalized Ref column after Reference, or update if exists
+            ref_idx = list(statement.columns).index(ref_col)
+            if 'Normalized Ref' not in statement.columns:
+                statement.insert(ref_idx + 1, 'Normalized Ref', normalized)
+            else:
+                statement['Normalized Ref'] = normalized
+
+            st.session_state.capitec_statement = statement
+            st.session_state.capitec_stmt_normalized = True
+            st.session_state.capitec_statement_cols_dirty = True
+
+            if 'capitec_saved_selections' in st.session_state:
+                del st.session_state.capitec_saved_selections
+
+            changed = sum(1 for o, n in zip(original_refs, normalized) if o.strip() != n)
+            st.success(f"Normalized {changed} of {len(original_refs)} references!")
+
+            with st.expander("Sample Normalizations (First 15)"):
+                sample = []
+                for i in range(min(15, len(original_refs))):
+                    if original_refs[i].strip() != normalized[i]:
+                        sample.append({
+                            'Original': original_refs[i],
+                            'Normalized': normalized[i]
+                        })
+                if sample:
+                    st.dataframe(sanitize_for_display(pd.DataFrame(sample)), width="stretch")
+                else:
+                    st.info("No changes — references were already clean")
+
+        except Exception as e:
+            st.error(f"Error normalizing references: {str(e)}")
+
     def render_column_mapping(self):
         """Render column mapping configuration"""
         st.markdown("---")
@@ -539,10 +610,12 @@ class CapitecWorkflow:
             st.session_state.capitec_saved_selections['statement_date_idx'] = statement_cols.index(statement_date_selection)
             st.session_state.capitec_match_settings['statement_date_col'] = statement_date_selection
 
+            # Default to Normalized Ref if available, otherwise Reference
+            stmt_ref_default = 'Normalized Ref' if 'Normalized Ref' in statement_cols else 'Reference'
             statement_ref_selection = st.selectbox(
                 "Reference Column",
                 statement_cols,
-                index=get_safe_index(statement_cols, 'statement_ref_idx', 'Reference'),
+                index=get_safe_index(statement_cols, 'statement_ref_idx', stmt_ref_default),
                 key='capitec_statement_ref_selector'
             )
             st.session_state.capitec_saved_selections['statement_ref_idx'] = statement_cols.index(statement_ref_selection)

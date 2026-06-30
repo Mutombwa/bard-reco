@@ -458,7 +458,8 @@ class GUIReconciliationEngine:
         """
         Cached fuzzy matching - 100x faster for repeated pairs.
 
-        This is critical for performance with large datasets.
+        Uses best of ratio, token_set_ratio, and partial_ratio to handle
+        prefix/suffix differences (e.g., "Cash dep dsr jhb par" vs "JHB Park Cen 4t").
         """
         ref1_lower = str(ref1).lower().strip()
         ref2_lower = str(ref2).lower().strip()
@@ -472,7 +473,11 @@ class GUIReconciliationEngine:
         self.fuzzy_cache_misses += 1
 
         try:
-            score = int(fuzz.ratio(ref1_lower, ref2_lower))
+            score = max(
+                int(fuzz.ratio(ref1_lower, ref2_lower)),
+                int(fuzz.token_set_ratio(ref1_lower, ref2_lower)),
+                int(fuzz.partial_ratio(ref1_lower, ref2_lower)),
+            )
         except (ValueError, TypeError):
             score = 100 if ref1_lower == ref2_lower else 0
 
